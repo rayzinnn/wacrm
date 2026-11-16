@@ -48,6 +48,9 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T03.d1 | Concluído documental | 9df1cc9; contrato texto/eventos em fonte fixada; observação posterior em T03.e1. |
 | T06.a4 | Concluído | 1b28fd6; namespace por conexão e guard server-side contra vínculo entre contas, SQL e testes focados verificados. |
 | T03.e1 | Observação parcial aprovada | 3136e31; único POST201 e callback send.message com mesmo ID; inbound textual do JID verificado, sem marcador de reply; messages.update ausente. Fixtures mínimas revisadas. Não habilita envio no CRM. |
+| T05.b2 | Concluído no normalizador | 3c48459; texto inbound individual normalizado com fixture sanitizada, 71 testes focados, lint e typecheck. Ingresso de mensagens ainda não ativado. |
+| T06.c1 | Concluído no banco local | ba62823; reserva/conclusão de envio e correção de ordem de locks, SQL rollback-only e concorrência verificados. RPCs não enviam mensagem. |
+| T06.c2 | Concluído no cliente | 3140bc8; `sendText` com aceite remoto validado e erro ambíguo sem retry, 71 testes focados, lint e typecheck. Não integrado ao CRM. |
 | T13.ui1 | Concluído | e4432c6; navegação e deep links bloqueados, 10 testes i18n/lint/typecheck e portal verificados. |
 | T14 — checks do marco | Concluídos neste recorte | evidence/T14.local-milestone.md: 174 arquivos/1.856 testes, lint 0 com 37 warnings, typecheck 0, build 0. Não conclui T14 da migração inteira. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
@@ -66,4 +69,4 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 
 O usuário solicitou retomada após os agentes atingirem o limite de uso. Os mesmos três agentes LUNA foram reutilizados no Maestri, preservando as alterações parciais. Verificação fresca: nove containers ativos (oito com healthcheck saudável e REST ativo), CRM HTTP 307 para login, Evolution HTTP 200. Serviços e dados locais foram preservados.
 
-Próxima ação exata: revisar concorrência das RPCs de tentativa e concluir cliente de texto e normalizador inbound, antes de integrar domínio e interface. O usuário confirmou pareamento e forneceu o número de homologação; GET status retornou200/connected. T03.e1 observa uma única mensagem autorizada, sem publicar o telefone em documentação versionada. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
+Próxima ação exata: aplicar inbound textual de modo transacional, ativar seu ingresso durável com proteção do worker de conexão e integrar envio de texto ao CRM. O usuário confirmou pareamento e forneceu o número de homologação; GET status retornou200/connected. T03.e1 observa uma única mensagem autorizada, sem publicar o telefone em documentação versionada. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído. Em paralelo, um agente SOL planeja a união visual com o projeto SIS; a implementação visual ainda não começou.
