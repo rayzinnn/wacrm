@@ -16,6 +16,11 @@
     "linkExpired": "That link has expired. For a password reset, use “Forgot password?” to request a new one; if you were confirming your email, sign up again.",
     "linkInvalid": "That link couldn’t be used to sign you in. If you were confirming your email, it may already be verified — just sign in below. For a password reset, request a new link and open it in the same browser you requested it from."
   },
+  "ResourceUnavailable": {
+    "title": "Feature unavailable",
+    "description": "The WhatsApp connection does not support this feature.",
+    "connectionLink": "View WhatsApp connection"
+  },
   "Sidebar": {
     "title": "CRM Template for WhatsApp",
     "primaryNav": "Primary",

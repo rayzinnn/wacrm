@@ -12,6 +12,7 @@ import { CURRENCIES } from '@/lib/currency';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { getEvolutionCapabilities } from '@/lib/whatsapp/evolution/capabilities';
 
 import { SECTION_META, type SettingsSection } from './settings-sections';
 import { SettingsChip, StatusDot } from './settings-chip';
@@ -164,6 +165,7 @@ export function SettingsOverview({
   const roleMeta = accountRole ? ROLE_META[accountRole] : null;
   const RoleIcon = roleMeta?.icon;
   const whatsappForAccount = whatsapp?.accountId === accountId ? whatsapp : null;
+  const capabilities = getEvolutionCapabilities();
 
   const currencyLabel =
     CURRENCIES.find((c) => c.code === defaultCurrency)?.label ?? defaultCurrency;
@@ -272,7 +274,9 @@ export function SettingsOverview({
 
       {/* Status tiles */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {tiles.map(({ section, loading, subtitle }) => {
+        {tiles
+          .filter(({ section }) => section !== 'templates' || capabilities.templates)
+          .map(({ section, loading, subtitle }) => {
           const meta = SECTION_META[section];
           const Icon = meta.icon;
           return (
@@ -305,7 +309,7 @@ export function SettingsOverview({
               <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
             </button>
           );
-        })}
+          })}
       </div>
     </section>
   );

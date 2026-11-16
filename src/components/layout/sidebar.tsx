@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { getEvolutionCapabilities } from "@/lib/whatsapp/evolution/capabilities";
 import {
   Bell,
   Bot,
@@ -116,6 +117,7 @@ import { useTranslations } from "next-intl";
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
+  const capabilities = getEvolutionCapabilities();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
@@ -208,7 +210,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {navItems
+              .filter((item) => item.href !== "/broadcasts" || capabilities.broadcasts)
+              .map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -265,7 +269,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   </Link>
                 </li>
               );
-            })}
+              })}
           </ul>
 
           <div className="my-4 border-t border-border" />

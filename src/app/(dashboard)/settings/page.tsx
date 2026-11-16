@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useMemo, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
@@ -12,13 +13,13 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
-import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { InboxSettings } from '@/components/settings/inbox-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
+import { getEvolutionCapabilities } from '@/lib/whatsapp/evolution/capabilities';
 import {
   resolveSection,
   type SettingsSection,
@@ -46,6 +47,8 @@ function SettingsPageInner() {
   const { defaultCurrency } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
+  const tUnavailable = useTranslations('ResourceUnavailable');
+  const capabilities = getEvolutionCapabilities();
 
   // The URL (`?tab=`) is the single source of truth for the active
   // section — deep-linkable, and it keeps the existing links in the
@@ -76,7 +79,25 @@ function SettingsPageInner() {
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
     whatsapp: <WhatsAppConfig />,
-    templates: <TemplateManager />,
+    templates: capabilities.templates ? null : (
+      <section
+        aria-labelledby="templates-unavailable-title"
+        className="rounded-xl border border-border bg-card p-5"
+      >
+        <h2 id="templates-unavailable-title" className="text-base font-semibold text-foreground">
+          {tUnavailable('title')}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {tUnavailable('description')}
+        </p>
+        <Link
+          href="/settings?tab=whatsapp"
+          className="mt-4 inline-flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {tUnavailable('connectionLink')}
+        </Link>
+      </section>
+    ),
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     inbox: <InboxSettings />,

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/card'
 import { ratio, type DashboardOverview } from '@/lib/dashboard/overview'
 import { cn } from '@/lib/utils'
+import { getEvolutionCapabilities } from '@/lib/whatsapp/evolution/capabilities'
 import { Skeleton } from './skeleton'
 import { useFormatDuration } from './use-format-duration'
 
@@ -52,11 +53,12 @@ export function CampaignsCard({ data }: { data: DashboardOverview | null }) {
   const t = useTranslations('Dashboard.overview.campaigns')
   const format = useFormatter()
   const formatDuration = useFormatDuration()
+  const capabilities = getEvolutionCapabilities()
   const percent = (v: number | null) =>
     v == null ? t('none') : format.number(v, { style: 'percent', maximumFractionDigits: 1 })
 
   const c = data?.campaigns
-  const b = c?.latestBroadcast
+  const b = capabilities.broadcasts ? c?.latestBroadcast : null
   const success = c ? ratio(c.automationRuns - c.automationFailed, c.automationRuns) : null
 
   return (
@@ -64,48 +66,52 @@ export function CampaignsCard({ data }: { data: DashboardOverview | null }) {
       <CardHeader>
         <CardTitle>{t('title')}</CardTitle>
         <CardDescription>{t('description')}</CardDescription>
-        <CardAction>
-          <Link href="/broadcasts" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
-            {t('link')}
-          </Link>
-        </CardAction>
+        {capabilities.broadcasts ? (
+          <CardAction>
+            <Link href="/broadcasts" className={buttonVariants({ variant: 'ghost', size: 'sm' })}>
+              {t('link')}
+            </Link>
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent>
         {!data || !c ? (
           <Skeleton className="h-44 w-full" />
         ) : (
           <>
-            {b ? (
-              <Link
-                href={`/broadcasts/${b.id}`}
-                className="block rounded-lg pb-3 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <div className="flex items-baseline justify-between gap-3 text-sm">
-                  <span className="truncate font-medium text-foreground">{b.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {t('sentAt', {
-                      date: format.dateTime(new Date(b.at), { day: 'numeric', month: 'short' }),
-                      count: b.recipients,
-                    })}
-                  </span>
-                </div>
-                <dl className="mt-2 grid grid-cols-4 gap-0.5 overflow-hidden rounded-lg text-xs">
-                  {[
-                    { label: t('delivered'), value: format.number(b.delivered) },
-                    { label: t('read'), value: percent(ratio(b.read, b.delivered)) },
-                    { label: t('replied'), value: percent(ratio(b.replied, b.delivered)) },
-                    { label: t('failed'), value: format.number(b.failed) },
-                  ].map((s) => (
-                    <div key={s.label} className="bg-muted/60 px-2 py-1.5">
-                      <dd className="text-sm font-semibold text-foreground tabular-nums">{s.value}</dd>
-                      <dt className="text-muted-foreground">{s.label}</dt>
-                    </div>
-                  ))}
-                </dl>
-              </Link>
-            ) : (
-              <p className="pb-3 text-sm text-muted-foreground">{t('noBroadcast')}</p>
-            )}
+            {capabilities.broadcasts ? (
+              b ? (
+                <Link
+                  href={`/broadcasts/${b.id}`}
+                  className="block rounded-lg pb-3 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="truncate font-medium text-foreground">{b.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {t('sentAt', {
+                        date: format.dateTime(new Date(b.at), { day: 'numeric', month: 'short' }),
+                        count: b.recipients,
+                      })}
+                    </span>
+                  </div>
+                  <dl className="mt-2 grid grid-cols-4 gap-0.5 overflow-hidden rounded-lg text-xs">
+                    {[
+                      { label: t('delivered'), value: format.number(b.delivered) },
+                      { label: t('read'), value: percent(ratio(b.read, b.delivered)) },
+                      { label: t('replied'), value: percent(ratio(b.replied, b.delivered)) },
+                      { label: t('failed'), value: format.number(b.failed) },
+                    ].map((s) => (
+                      <div key={s.label} className="bg-muted/60 px-2 py-1.5">
+                        <dd className="text-sm font-semibold text-foreground tabular-nums">{s.value}</dd>
+                        <dt className="text-muted-foreground">{s.label}</dt>
+                      </div>
+                    ))}
+                  </dl>
+                </Link>
+              ) : (
+                <p className="pb-3 text-sm text-muted-foreground">{t('noBroadcast')}</p>
+              )
+            ) : null}
             <ul className="divide-y divide-border border-t border-border">
               <HealthRow
                 label={t('automations', { count: c.automationRuns })}
@@ -126,11 +132,13 @@ export function CampaignsCard({ data }: { data: DashboardOverview | null }) {
                 }
                 tone={data.replies.ai.replies > 0 ? 'good' : 'muted'}
               />
-              <HealthRow
-                label={t('templates', { count: c.templatesApproved })}
-                status={c.templatesRejected > 0 ? t('templatesRejected', { count: c.templatesRejected }) : t('templatesOk')}
-                tone={c.templatesRejected > 0 ? 'critical' : 'good'}
-              />
+              {capabilities.templates ? (
+                <HealthRow
+                  label={t('templates', { count: c.templatesApproved })}
+                  status={c.templatesRejected > 0 ? t('templatesRejected', { count: c.templatesRejected }) : t('templatesOk')}
+                  tone={c.templatesRejected > 0 ? 'critical' : 'good'}
+                />
+              ) : null}
             </ul>
           </>
         )}
