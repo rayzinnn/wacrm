@@ -6,6 +6,7 @@ import {
   type InteractiveButtonsPayload,
   type InteractiveListPayload,
 } from './interactive'
+import { INTERACTIVE_LIMITS } from './interactive-contract'
 
 const validButtons: InteractiveButtonsPayload = {
   kind: 'buttons',
@@ -30,6 +31,22 @@ const validList: InteractiveListPayload = {
     },
   ],
 }
+
+describe('interactive contract limits', () => {
+  it('keeps the current limits used by validation and sending', () => {
+    expect(INTERACTIVE_LIMITS).toEqual({
+      maxButtons: 3,
+      buttonTitleMaxLength: 20,
+      maxListSections: 10,
+      maxListRowsTotal: 10,
+      listRowTitleMaxLength: 24,
+      listRowDescriptionMaxLength: 72,
+      bodyMaxLength: 1024,
+      footerMaxLength: 60,
+      headerTextMaxLength: 60,
+    })
+  })
+})
 
 describe('validateInteractivePayload — buttons', () => {
   it('accepts a well-formed buttons payload', () => {

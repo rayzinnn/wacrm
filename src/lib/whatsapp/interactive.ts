@@ -9,10 +9,8 @@
 //   - the message bubble + preview (render),
 //   - quick replies (store an interactive snippet).
 //
-// The field names (`id`/`title`/`description` on buttons/rows) match
-// `meta-api.ts`'s `InteractiveButton` / `InteractiveListRow` /
-// `InteractiveListSection` on purpose, so a payload maps straight onto
-// the Meta send args with no translation.
+// The shared shapes and limits come from `interactive-contract.ts`,
+// which stays independent from the transport implementation.
 //
 // `validateInteractivePayload` mirrors the throws already inside the
 // meta-api senders, but returns a result object so callers (API routes,
@@ -21,14 +19,17 @@
 // mid-conversation.
 // ============================================================
 
-import { INTERACTIVE_LIMITS } from './meta-api'
+import { INTERACTIVE_LIMITS } from './interactive-contract'
+import type {
+  InteractiveButton,
+  InteractiveListSection,
+} from './interactive-contract'
 
-export interface InteractiveButton {
-  /** Stable id echoed back in the webhook when tapped. */
-  id: string
-  /** Visible label (≤ 20 chars per Meta). */
-  title: string
-}
+export type {
+  InteractiveButton,
+  InteractiveListRow,
+  InteractiveListSection,
+} from './interactive-contract'
 
 export interface InteractiveButtonsPayload {
   kind: 'buttons'
@@ -40,21 +41,6 @@ export interface InteractiveButtonsPayload {
   footer?: string
   /** 1–3 buttons. */
   buttons: InteractiveButton[]
-}
-
-export interface InteractiveListRow {
-  /** Stable id echoed back in the webhook when selected. */
-  id: string
-  /** Row title (≤ 24 chars per Meta). */
-  title: string
-  /** Optional secondary line (≤ 72 chars). */
-  description?: string
-}
-
-export interface InteractiveListSection {
-  /** Optional section header shown above its rows. */
-  title?: string
-  rows: InteractiveListRow[]
 }
 
 export interface InteractiveListPayload {

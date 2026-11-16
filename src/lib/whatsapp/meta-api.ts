@@ -11,6 +11,17 @@
 
 import { isBusinessScopedUserId } from './wa-identity'
 import { getT } from '@/lib/i18n/translate'
+import { INTERACTIVE_LIMITS } from './interactive-contract'
+import type {
+  InteractiveButton,
+  InteractiveListSection,
+} from './interactive-contract'
+
+export type {
+  InteractiveButton,
+  InteractiveListRow,
+  InteractiveListSection,
+} from './interactive-contract'
 
 const ti = getT('Validation.interactive')
 
@@ -920,32 +931,6 @@ export async function sendTypingIndicator(
 // limits BEFORE the network call so the failure mode is a
 // developer-facing error rather than a customer-facing one.
 
-/**
- * Meta limits for interactive messages, hard-coded so violations
- * fail at build/save time rather than as a 400 from the Meta API
- * mid-conversation. See:
- *   https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-reply-buttons-messages
- *   https://developers.facebook.com/docs/whatsapp/cloud-api/messages/interactive-list-messages
- */
-export const INTERACTIVE_LIMITS = {
-  maxButtons: 3,
-  buttonTitleMaxLength: 20,
-  maxListSections: 10,
-  maxListRowsTotal: 10,
-  listRowTitleMaxLength: 24,
-  listRowDescriptionMaxLength: 72,
-  bodyMaxLength: 1024,
-  footerMaxLength: 60,
-  headerTextMaxLength: 60,
-} as const
-
-export interface InteractiveButton {
-  /** Stable id sent back in the webhook when tapped (≤ 256 chars). */
-  id: string
-  /** Visible label (≤ 20 chars per Meta). */
-  title: string
-}
-
 export interface SendInteractiveButtonsArgs {
   phoneNumberId: string
   accessToken: string
@@ -1037,21 +1022,6 @@ export async function sendInteractiveButtons(
   }
   const data = await response.json()
   return { messageId: data.messages[0].id }
-}
-
-export interface InteractiveListRow {
-  /** Stable id sent back in the webhook when tapped (≤ 200 chars). */
-  id: string
-  /** Visible row title (≤ 24 chars per Meta). */
-  title: string
-  /** Optional secondary line shown under the title (≤ 72 chars). */
-  description?: string
-}
-
-export interface InteractiveListSection {
-  /** Optional section header shown above its rows. */
-  title?: string
-  rows: InteractiveListRow[]
 }
 
 export interface SendInteractiveListArgs {

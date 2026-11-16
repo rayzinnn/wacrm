@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  INTERACTIVE_LIMITS,
   sendInteractiveButtons,
   sendInteractiveList,
 } from "./meta-api";
+import { INTERACTIVE_LIMITS } from "./interactive-contract";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
 // to a never-resolving mock so a test that accidentally falls through to
