@@ -571,7 +571,7 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] min-h-0 min-w-0 flex-col overflow-hidden bg-background sm:-m-6">
+    <div className="-m-4 flex h-[calc(100dvh-4rem)] min-h-0 min-w-0 flex-col overflow-hidden bg-background sm:-m-6 xl:h-[calc(100dvh-4.75rem)]">
       <h1 className="sr-only">
         {activeContact?.name || activeContact?.phone || tThread("selectConversation")}
       </h1>

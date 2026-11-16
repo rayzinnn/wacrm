@@ -16,9 +16,10 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatRelativeTime, getDateFnsLocale } from '@/lib/i18n/relative-time';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -228,12 +229,11 @@ function RunCard({
 }) {
   const meta = STATUS_META[run.status];
   const StatusIcon = meta.icon;
+  const locale = useLocale();
   const contactLabel =
     run.contact?.name?.trim() || run.contact?.phone || t('unknownContact');
   const duration = run.ended_at
-    ? formatDistanceToNow(new Date(run.ended_at), {
-        addSuffix: false,
-      })
+    ? formatRelativeTime(new Date(run.ended_at), locale)
     : null;
   return (
     <article className={styles.runCard}>
@@ -277,7 +277,7 @@ function RunCard({
           </div>
           <div className={styles.runMeta}>
             <span className={styles.runMetaItem}>
-              {t('started', { time: format(new Date(run.started_at), 'PP p') })}
+              {t('started', { time: format(new Date(run.started_at), 'PP p', { locale: getDateFnsLocale(locale) }) })}
             </span>
             {run.reprompt_count > 0 && (
               <span className={styles.runMetaItem}>

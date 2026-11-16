@@ -56,6 +56,7 @@ import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
 import { canSubmitInboxTextMessage } from "./text-send-operation";
+import { getEvolutionCapabilities } from "@/lib/whatsapp/evolution/capabilities";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -211,6 +212,7 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
+  const evolutionCapabilities = getEvolutionCapabilities();
   // Keep the existing session guard for non-text actions.
   const inputsDisabled = readOnly || sessionExpired;
 
@@ -649,7 +651,7 @@ export function MessageComposer({
               the full width; on sm+ it sits inline before the textarea. */}
           <div className="order-2 flex basis-full items-end gap-2 sm:order-1 sm:basis-auto">
           {/* Attach menu — photo / video / document / voice. */}
-          <DropdownMenu>
+          {evolutionCapabilities.media.length > 0 && <DropdownMenu>
             <DropdownMenuTrigger
               disabled={inputsDisabled || busy}
               title={
@@ -685,29 +687,27 @@ export function MessageComposer({
                 {t("voiceNote")}
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
 
           {/* + menu — interactive messages + quick replies. Non-text actions
               keep their existing 24-hour session guard. */}
           <DropdownMenu>
             <DropdownMenuTrigger
-              disabled={inputsDisabled}
+              disabled={readOnly}
               title={
                 readOnly
                   ? t("readOnlyTitle")
-                  : inputsDisabled
-                    ? undefined
-                    : t("moreActions")
+                  : t("moreActions")
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => openInteractiveBuilder()}>
+              {evolutionCapabilities.interactive && <DropdownMenuItem disabled={inputsDisabled} onClick={() => openInteractiveBuilder()}>
                 <MessageSquareDashed className="mr-2 h-4 w-4" />
                 {t("interactiveMessage")}
-              </DropdownMenuItem>
+              </DropdownMenuItem>}
               <DropdownMenuItem onClick={() => setQuickReplyOpen(true)}>
                 <Zap className="mr-2 h-4 w-4" />
                 {t("quickReplies")}
@@ -715,7 +715,7 @@ export function MessageComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <GatedButton
+          {evolutionCapabilities.templates && <GatedButton
             variant="ghost"
             size="sm"
             canAct={!readOnly}
@@ -725,7 +725,7 @@ export function MessageComposer({
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
+          </GatedButton>}
 
           <GatedButton
             variant="ghost"
@@ -753,14 +753,15 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : t("typeMessagePlaceholder")
+                : t("typeMessageShortPlaceholder")
             }
+            aria-label={readOnly ? t("readOnlyPlaceholder") : t("typeMessageShortPlaceholder")}
             disabled={readOnly}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
             // The placeholder text also surfaces the read-only state.
-            title={readOnly ? t("readOnlyTitle") : undefined}
+            title={readOnly ? t("readOnlyTitle") : enterSends ? t("typeMessagePlaceholder") : undefined}
             className={cn(
               "order-1 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 sm:order-2",
               readOnly && "cursor-not-allowed opacity-50"

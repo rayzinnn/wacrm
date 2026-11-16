@@ -416,6 +416,7 @@
       "readOnlyPlaceholder": "Solo lectura: los observadores pueden navegar, pero no responder",
       "sessionExpiredPlaceholder": "Sesión expirada - usa una plantilla",
       "typeMessagePlaceholder": "Escribe un mensaje... (Shift+Enter para nueva línea)",
+      "typeMessageShortPlaceholder": "Escribe un mensaje...",
       "textSendingUnavailable": "El envío de texto no está disponible por el momento.",
       "readOnlyTitle": "Solo lectura: tu rol no puede enviar mensajes",
       "recording": "Grabando… {current} / {max}",

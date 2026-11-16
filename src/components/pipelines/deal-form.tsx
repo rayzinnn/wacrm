@@ -290,7 +290,7 @@ export function DealForm({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="border-border bg-popover text-popover-foreground w-full p-0 sm:max-w-xl"
+        className="border-border bg-popover text-popover-foreground p-0 data-[side=right]:w-full sm:max-w-xl"
       >
         <div className="flex h-full flex-col">
           <SheetHeader className="border-border/70 border-b px-5 py-5 sm:px-7">
@@ -299,7 +299,7 @@ export function DealForm({
             </SheetTitle>
           </SheetHeader>
 
-          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7">
             <div className="grid gap-2">
               <Label htmlFor="deal-title" className="text-muted-foreground">
                 {t('title')}
@@ -467,7 +467,7 @@ export function DealForm({
                 <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
                   {t('status')}
                 </p>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Button
                     type="button"
                     onClick={() => handleStatusChange('won')}
@@ -514,7 +514,7 @@ export function DealForm({
             )}
           </div>
 
-          <div className="border-border/70 bg-popover/90 border-t px-5 py-4 sm:px-7">
+          <div className="border-border/70 bg-popover/90 shrink-0 border-t px-5 py-4 sm:px-7">
             <div className="flex gap-2">
               <Button
                 variant="outline"
