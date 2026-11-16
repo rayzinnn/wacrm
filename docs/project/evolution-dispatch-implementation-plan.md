@@ -58,6 +58,17 @@ Schema T12 já presente:
   `pending`/`processing`. O contrato implementado aceita apenas `p_result IS
   NULL`; não criar formato JSON de resultado até alteração explícita do
   contrato.
+- `start_evolution_event_dispatch`, em
+  `supabase/migrations/20261116201732_t12_start_evolution_event_dispatch.sql`:
+  cria/reutiliza log de automação ou run de flow com vínculo à root; foi aplicado
+  no banco local e testado com rollback e concorrência. Ainda não há worker.
+- `apply_evolution_automation_effect`, ampliada nas migrations
+  `20261116203606_t12_apply_evolution_automation_effect.sql`,
+  `20261116210937_t12_apply_evolution_create_deal_effect.sql` e
+  `20261116212357_t12_apply_evolution_assign_conversation_effect.sql`:
+  cobre tag, campo, negócio e atribuição a agente específico com efeito e
+  checkpoint atômicos. Foi aplicada somente no banco local. Waits, cadeia
+  `tag_added` e execução do engine continuam ausentes.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
@@ -154,14 +165,10 @@ checkpoint do dispatch.
 
 ## Sender Meta bloqueado e núcleo de texto Evolution
 
-`src/lib/automations/meta-send.ts` já falha fechado para texto, template e
-interativo usando `AUTOMATION_SEND_CAPABILITY_ERROR`. Não remover esse gate como
-parte da migração. Em contraste, `src/lib/flows/meta-send.ts` ainda carrega
-credenciais de `whatsapp_config` e chama `meta-api.ts` para texto, mídia e
-interativo; `src/lib/ai/auto-reply.ts` reutiliza esse sender e chama indicador
-de digitação Meta. Os senders de fluxo/AI precisam ser substituídos por uma
-dependência explícita de transporte/capacidade no recorte correspondente, sem
-fallback silencioso para Meta.
+`src/lib/automations/meta-send.ts` e `src/lib/flows/meta-send.ts` agora falham
+fechados para os envios antigos. `src/lib/ai/auto-reply.ts` também falha antes de
+geração ou envio. Esses bloqueios permanecem até os motores ganharem transporte
+Evolution e checkpoints; não são implementação das respostas automáticas.
 
 Core de texto: `src/lib/whatsapp/evolution/send-adapter.ts` +
 `src/lib/whatsapp/evolution/client.ts`, com acesso às credenciais da conexão via
@@ -177,16 +184,19 @@ Meta `wamid` como idempotency key.
 
 1. **Integração do ciclo de roots (sem ação externa).** Criar worker local
    separado do apply inbound e rota cron protegida semelhante à existente;
-   reivindicar roots com `claim_evolution_dispatches`, chamar o futuro
+   reivindicar roots com `claim_evolution_dispatches`, chamar
    `start_evolution_event_dispatch` e fechar candidatas não elegíveis como
-   `skipped`. Persistir `automation_logs`/`flow_runs` uma vez. **Lacuna:** RPC
-   `start_evolution_event_dispatch` não aparece nas migrations. **Teste:** SQL
-   rollback-only e concorrência para automação log único, flow run ativo
-   reutilizado e AI root sem linha artificial.
+   `skipped`. Persistir `automation_logs`/`flow_runs` uma vez. **Estado:** RPC
+   de início aplicada/testada no banco local; faltam worker, elegibilidade e
+   separação segura entre os três engines. Claim genérico não deve consumir
+   roots de engine ainda sem execução. Testes SQL de início e concorrência já
+   passaram.
 2. **Primitivas locais de automação.** Implementar/usar
    `apply_evolution_automation_effect` para tags, contato, deal, assignment e
    waits; worker avalia `condition` sem I/O e termina step com RPC fenced.
-   **Lacunas:** RPC ausente; `automation_pending_executions.evolution_dispatch_step_id`
+   **Estado:** RPC de tag/campo/negócio/atribuição específica aplicada e testada
+   no banco local. **Lacunas:** execução do worker, `tag_added`, waits e
+   `automation_pending_executions.evolution_dispatch_step_id`
    e unique parcial/constraint `automation_pending_executions_evolution_dispatch_step_key`
    ausentes. **Teste:** rollback-only de tenant/FKs/allowed fields, replay da
    mesma wait e corrida de step/efeito. Excluir `close_conversation` até extensão
@@ -249,7 +259,7 @@ Meta `wamid` como idempotency key.
 ## Lacunas consolidadas
 
 Ausentes no estado atual das migrations, embora descritos em
-`schema-contract.md`: `start_evolution_event_dispatch`,
+`schema-contract.md`: implementação de `wait`/`wait_for_reply` na
 `apply_evolution_automation_effect`, `complete_evolution_flow_transition`,
 `claim_ai_reply_slot_for_dispatch`, `complete_evolution_ai_handoff`;
 colunas/índices Evolution em `flow_run_events`; coluna/unique de step em
