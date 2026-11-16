@@ -68,20 +68,20 @@ export function OverviewHeader({
   }
 
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 border-b border-border/70 pb-5">
       <div className="min-w-0">
         {data ? (
           <>
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+            <h1 className="max-w-3xl text-2xl leading-tight font-semibold tracking-tight text-foreground sm:text-3xl">
               {firstName
                 ? t(`greeting.${partOfDay(new Date(now))}`, { name: firstName })
                 : t(`greetingNoName.${partOfDay(new Date(now))}`)}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">{context}</p>
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{context}</p>
           </>
         ) : (
           <>
-            <Skeleton className="h-6 w-56" />
+            <Skeleton className="h-8 w-56 sm:h-9" />
             <Skeleton className="mt-2 h-4 w-80" />
           </>
         )}

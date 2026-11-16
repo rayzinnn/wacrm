@@ -49,6 +49,7 @@ export function KpiTile({
   change,
   comparisonLabel,
   footer,
+  featured = false,
 }: {
   title: string
   info: string
@@ -57,9 +58,17 @@ export function KpiTile({
   change: Change
   comparisonLabel: string
   footer: ReactNode
+  featured?: boolean
 }) {
   return (
-    <Card size="sm" className="gap-2 px-4">
+    <Card
+      size="sm"
+      className={cn(
+        'relative h-full gap-2 overflow-hidden px-4',
+        featured && 'border-primary/30 bg-primary/[0.035] px-5 py-5 sm:px-6',
+      )}
+    >
+      {featured ? <span className="absolute inset-y-0 left-0 w-1 bg-primary" aria-hidden /> : null}
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <span className="truncate">{title}</span>
         <Tooltip>
@@ -72,7 +81,7 @@ export function KpiTile({
           <TooltipContent>{info}</TooltipContent>
         </Tooltip>
       </div>
-      <p className="text-2xl leading-none font-semibold tracking-tight text-foreground tabular-nums">
+      <p className={cn('text-2xl leading-none font-semibold tracking-tight text-foreground tabular-nums', featured && 'text-4xl sm:text-5xl')}>
         {value}
         {unit ? <span className="ml-1 text-sm font-medium text-muted-foreground">{unit}</span> : null}
       </p>

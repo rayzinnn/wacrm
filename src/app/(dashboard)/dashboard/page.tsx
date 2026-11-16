@@ -133,6 +133,7 @@ function DashboardPageInner() {
   if (failed && !data) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
+        <h1 className="sr-only">{t('loadFailed')}</h1>
         <p className="text-sm text-muted-foreground">{t('loadFailed')}</p>
         <Button variant="outline" size="sm" onClick={() => refresh(range)}>
           {t('retry')}
@@ -142,7 +143,7 @@ function DashboardPageInner() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 sm:space-y-6">
       <OverviewHeader
         data={data}
         now={now}
@@ -158,7 +159,7 @@ function DashboardPageInner() {
           <AttentionRow data={data} now={now} onlineCount={onlineCount} />
           <KpiRow data={data} currency={defaultCurrency} />
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)]">
             <MessageVolumeCard data={data} />
             <ReplyQueueCard data={data} now={now} />
           </div>
