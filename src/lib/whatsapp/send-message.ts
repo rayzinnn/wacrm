@@ -22,7 +22,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  sendTextMessage,
   sendTemplateMessage,
   sendMediaMessage,
   sendInteractiveButtons,
@@ -42,6 +41,12 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import { applyPendingMessageStatuses } from '@/lib/whatsapp/message-status-sync';
+import {
+  createEvolutionSendAdapter,
+  EvolutionSendAdapterError,
+} from '@/lib/whatsapp/evolution/send-adapter';
+import type { EvolutionTextSendResult } from '@/lib/whatsapp/evolution/send-adapter';
+import { loadConnection } from '@/lib/whatsapp/evolution/store';
 import type { MessageTemplate } from '@/types';
 import {
   resolveTemplateRow,
@@ -90,6 +95,8 @@ export interface SendMessageParams {
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
   senderId?: string | null;
+  /** Stable caller-supplied idempotency key for Evolution text sends. */
+  requestId?: string;
 }
 
 export interface SendMessageResult {
@@ -121,8 +128,13 @@ export function validateSendMessageParams(params: {
   templateName?: string | null;
   interactivePayload?: InteractiveMessagePayload | null;
 }): void {
-  const { messageType, contentText, mediaUrl, templateName, interactivePayload } =
-    params;
+  const {
+    messageType,
+    contentText,
+    mediaUrl,
+    templateName,
+    interactivePayload,
+  } = params;
 
   if (!messageType) {
     throw new SendMessageError('bad_request', 'message_type is required', 400);
@@ -186,6 +198,54 @@ export function validateSendMessageParams(params: {
   }
 }
 
+async function pauseActiveFlow(
+  accountId: string,
+  contactId: string
+): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin()
+      .from('flow_runs')
+      .update({
+        status: 'paused_by_agent',
+        ended_at: new Date().toISOString(),
+        end_reason: 'agent_replied',
+      })
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .eq('status', 'active');
+    if (error)
+      console.error('[flows] pause-on-agent-send failed:', error.message);
+  } catch (cause) {
+    console.error(
+      '[flows] pause-on-agent-send threw:',
+      cause instanceof Error ? cause.message : cause
+    );
+  }
+}
+
+async function refreshConversationSummary(
+  db: SupabaseClient,
+  conversationId: string,
+  lastMessageText: string,
+  messageCreatedAt?: string
+): Promise<void> {
+  const timestamp = messageCreatedAt ?? new Date().toISOString();
+  let update = db
+    .from('conversations')
+    .update({
+      last_message_text: lastMessageText,
+      last_message_at: timestamp,
+      updated_at: timestamp,
+    })
+    .eq('id', conversationId);
+  if (messageCreatedAt) {
+    update = update.or(
+      `last_message_at.is.null,last_message_at.lte.${messageCreatedAt}`
+    );
+  }
+  await update;
+}
+
 export async function sendMessageToConversation(
   db: SupabaseClient,
   accountId: string,
@@ -204,6 +264,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    requestId,
   } = params;
 
   if (!conversationId) {
@@ -221,6 +282,24 @@ export async function sendMessageToConversation(
     templateName,
     interactivePayload,
   });
+
+  if (
+    messageType === 'text' &&
+    (!requestId || !requestId.trim() || requestId.length > 200)
+  ) {
+    throw new SendMessageError(
+      'idempotency_key_required',
+      'A stable Idempotency-Key is required for text messages',
+      400
+    );
+  }
+  if (messageType === 'text' && replyToMessageId) {
+    throw new SendMessageError(
+      'reply_not_supported',
+      'Reply-to text sending is not supported by the Evolution adapter yet',
+      400
+    );
+  }
 
   const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(messageType);
 
@@ -254,41 +333,79 @@ export async function sendMessageToConversation(
       400
     );
   }
+  if (messageType === 'text' && !resolvedTarget.isPhone) {
+    throw new SendMessageError(
+      'bad_request',
+      'Evolution text sending requires a contact phone number',
+      400
+    );
+  }
   const sendTarget = resolvedTarget.target;
   const hasValidPhone = resolvedTarget.isPhone;
   const sanitizedPhone = hasValidPhone ? sendTarget : '';
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-
-  if (configError || !config) {
-    throw new SendMessageError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
-  }
-
-  const accessToken = decrypt(config.access_token);
-
-  // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
-    void db
+  let evolutionConnection: Awaited<ReturnType<typeof loadConnection>> = null;
+  let config: { phone_number_id: string } | null = null;
+  let accessToken = '';
+  if (messageType === 'text') {
+    if (!senderId) {
+      throw new SendMessageError(
+        'sender_required',
+        'A sender is required for an Evolution text send',
+        400
+      );
+    }
+    try {
+      evolutionConnection = await loadConnection(accountId);
+    } catch {
+      throw new SendMessageError(
+        'whatsapp_unavailable',
+        'Evolution connection is unavailable',
+        503
+      );
+    }
+    if (!evolutionConnection) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        'Evolution is not configured for this account',
+        400
+      );
+    }
+  } else {
+    // Legacy non-text paths remain in place for the T13 removal/blocking
+    // recut. Text never reads or falls back to the historical Meta config.
+    const { data, error: configError } = await db
       .from('whatsapp_config')
-      .update({ access_token: encrypt(accessToken) })
-      .eq('id', config.id)
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) {
-          console.warn(
-            '[send-message] access_token GCM upgrade failed:',
-            error.message
-          );
-        }
-      });
+      .select('*')
+      .eq('account_id', accountId)
+      .single();
+
+    if (configError || !data) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    const legacyConfig = data;
+    config = legacyConfig;
+    accessToken = decrypt(legacyConfig.access_token);
+
+    // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
+    if (isLegacyFormat(legacyConfig.access_token)) {
+      void db
+        .from('whatsapp_config')
+        .update({ access_token: encrypt(accessToken) })
+        .eq('id', legacyConfig.id)
+        .then(({ error }: { error: { message: string } | null }) => {
+          if (error) {
+            console.warn(
+              '[send-message] access_token GCM upgrade failed:',
+              error.message
+            );
+          }
+        });
+    }
   }
 
   // Resolve the reply target to its Meta message_id. The parent must
@@ -344,9 +461,16 @@ export async function sendMessageToConversation(
   }
 
   const attempt = async (phone: string): Promise<string> => {
+    if (messageType === 'text') {
+      throw new SendMessageError(
+        'transport_unavailable',
+        'Text messages must use the Evolution send adapter',
+        503
+      );
+    }
     if (messageType === 'template') {
       const result = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
+        phoneNumberId: config!.phone_number_id,
         accessToken,
         to: phone,
         templateName: templateName!,
@@ -360,7 +484,7 @@ export async function sendMessageToConversation(
     }
     if (isMediaKind) {
       const result = await sendMediaMessage({
-        phoneNumberId: config.phone_number_id,
+        phoneNumberId: config!.phone_number_id,
         accessToken,
         to: phone,
         kind: messageType as MediaKind,
@@ -375,7 +499,7 @@ export async function sendMessageToConversation(
       const p = interactivePayload!;
       if (p.kind === 'buttons') {
         const result = await sendInteractiveButtons({
-          phoneNumberId: config.phone_number_id,
+          phoneNumberId: config!.phone_number_id,
           accessToken,
           to: phone,
           bodyText: p.body,
@@ -387,7 +511,7 @@ export async function sendMessageToConversation(
         return result.messageId;
       }
       const result = await sendInteractiveList({
-        phoneNumberId: config.phone_number_id,
+        phoneNumberId: config!.phone_number_id,
         accessToken,
         to: phone,
         bodyText: p.body,
@@ -399,51 +523,145 @@ export async function sendMessageToConversation(
       });
       return result.messageId;
     }
-    const result = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
-      to: phone,
-      text: contentText!,
-      contextMessageId,
-    });
-    return result.messageId;
+    throw new SendMessageError(
+      'unsupported_message_type',
+      'This message type is not supported by the Evolution adapter',
+      400
+    );
   };
 
-  // Send via Meta — retry across phone-number variants if Meta rejects
-  // with "recipient not in allowed list"; persist a working variant
-  // back to the contact so the next send goes straight through.
   let waMessageId = '';
   let workingPhone = sendTarget;
-  try {
-    // Variants only make sense for a phone number — a BSUID is opaque
-    // and has exactly one correct form, so it gets a single attempt.
-    const variants = hasValidPhone ? phoneVariants(sanitizedPhone) : [sendTarget];
-    let lastError: unknown = null;
-
-    for (const variant of variants) {
-      try {
-        waMessageId = await attempt(variant);
-        workingPhone = variant;
-        lastError = null;
-        break;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!isRecipientNotAllowedError(message)) {
-          throw err;
-        }
-        lastError = err;
-        console.warn(
-          `[send-message] variant "${variant}" rejected by Meta, trying next…`
+  let evolutionSend: EvolutionTextSendResult | null = null;
+  if (messageType === 'text') {
+    const sendEvolutionText = createEvolutionSendAdapter(supabaseAdmin());
+    try {
+      evolutionSend = await sendEvolutionText({
+        connectionId: evolutionConnection!.id,
+        conversationId,
+        senderType: 'agent',
+        senderId: senderId!,
+        requestId: requestId!,
+        recipient: `${sanitizedPhone}@s.whatsapp.net`,
+        text: contentText!,
+        credentials: evolutionConnection!.credentials,
+      });
+    } catch (cause) {
+      if (cause instanceof EvolutionSendAdapterError) {
+        throw new SendMessageError(
+          'evolution_send_unavailable',
+          'Evolution send reservation is unavailable',
+          cause.code === 'invalid_input' ? 400 : 503
         );
       }
+      throw cause;
     }
 
-    if (lastError) throw lastError;
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[send-message] Meta send failed for all variants:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+    if (
+      evolutionSend.outcome === 'unknown' ||
+      evolutionSend.outcome === 'pending'
+    ) {
+      if (evolutionSend.shouldSend)
+        await pauseActiveFlow(accountId, contact.id);
+      throw new SendMessageError(
+        'delivery_unknown',
+        `Text delivery is not confirmed. Check request ${requestId} before retrying.`,
+        504
+      );
+    }
+    if (evolutionSend.outcome === 'rejected') {
+      throw new SendMessageError(
+        'evolution_rejected',
+        'Evolution rejected the text message',
+        502
+      );
+    }
+
+    if (!evolutionSend.shouldSend) {
+      const { data: previous, error: previousError } = await db
+        .from('messages')
+        .select('message_id, content_text, created_at')
+        .eq('id', evolutionSend.messageRowId)
+        .eq('conversation_id', conversationId)
+        .maybeSingle();
+      if (previousError || !previous?.created_at) {
+        throw new SendMessageError(
+          'evolution_result_unavailable',
+          'The accepted Evolution message result is unavailable',
+          503
+        );
+      }
+      const externalMessageId =
+        evolutionSend.externalMessageId ?? previous.message_id;
+      if (!externalMessageId) {
+        throw new SendMessageError(
+          'evolution_result_unavailable',
+          'The accepted Evolution message result is unavailable',
+          503
+        );
+      }
+      try {
+        await refreshConversationSummary(
+          db,
+          conversationId,
+          previous.content_text || contentText || '[text]',
+          previous.created_at
+        );
+      } finally {
+        await pauseActiveFlow(accountId, contact.id);
+      }
+      const replayMessageId = externalMessageId;
+      return {
+        messageId: evolutionSend.messageRowId,
+        whatsappMessageId: replayMessageId,
+      };
+    }
+
+    waMessageId = evolutionSend.externalMessageId ?? '';
+    if (!waMessageId) {
+      await pauseActiveFlow(accountId, contact.id);
+      throw new SendMessageError(
+        'delivery_unknown',
+        `Text delivery is not confirmed. Check request ${requestId} before retrying.`,
+        504
+      );
+    }
+  } else {
+    // Keep the legacy non-text transport while capability/UI blocking is
+    // completed in T13. Text can never enter this path.
+    try {
+      const variants = hasValidPhone
+        ? phoneVariants(sanitizedPhone)
+        : [sendTarget];
+      let lastError: unknown = null;
+
+      for (const variant of variants) {
+        try {
+          waMessageId = await attempt(variant);
+          workingPhone = variant;
+          lastError = null;
+          break;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (!isRecipientNotAllowedError(message)) throw err;
+          lastError = err;
+          console.warn(
+            `[send-message] legacy non-text variant rejected: ${message}`
+          );
+        }
+      }
+
+      if (lastError) throw lastError;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unknown provider error';
+      console.error('[send-message] legacy non-text send failed:', message);
+      throw new SendMessageError(
+        'meta_error',
+        `Legacy send failed: ${message}`,
+        502
+      );
+    }
   }
 
   if (hasValidPhone && workingPhone !== sanitizedPhone) {
@@ -477,75 +695,64 @@ export async function sendMessageToConversation(
           )
         : (contentText ?? null);
 
-  const { data: messageRecord, error: msgError } = await db
-    .from('messages')
-    .insert({
-      conversation_id: conversationId,
-      sender_type: 'agent',
-      sender_id: senderId ?? null,
-      content_type: messageType,
-      content_text: persistedText,
-      media_url:
-        messageType === 'template'
-          ? templateHeaderMediaUrl(templateRow, templateMessageParams)
-          : mediaUrl || null,
-      template_name: templateName || null,
-      interactive_payload:
-        messageType === 'interactive' ? interactivePayload : null,
-      message_id: waMessageId,
-      status: 'sent',
-      reply_to_message_id: replyToMessageId || null,
-    })
-    .select()
-    .single();
+  let messageRecord: { id: string } | null = null;
+  if (evolutionSend) {
+    // The reservation RPC already inserted the `sending` row and the
+    // completion RPC finalized it. Never fabricate a second local row.
+    messageRecord = { id: evolutionSend.messageRowId };
+  } else {
+    const { data, error: msgError } = await db
+      .from('messages')
+      .insert({
+        conversation_id: conversationId,
+        sender_type: 'agent',
+        sender_id: senderId ?? null,
+        content_type: messageType,
+        content_text: persistedText,
+        media_url:
+          messageType === 'template'
+            ? templateHeaderMediaUrl(templateRow, templateMessageParams)
+            : mediaUrl || null,
+        template_name: templateName || null,
+        interactive_payload:
+          messageType === 'interactive' ? interactivePayload : null,
+        message_id: waMessageId,
+        status: 'sent',
+        reply_to_message_id: replyToMessageId || null,
+      })
+      .select()
+      .single();
 
-  if (msgError) {
-    console.error('[send-message] error inserting sent message:', msgError);
+    if (msgError || !data) {
+      console.error('[send-message] error inserting sent message:', msgError);
+      throw new SendMessageError(
+        'db_error',
+        `Message sent to Meta but failed to save to DB: ${msgError?.message ?? 'database unavailable'}`,
+        500
+      );
+    }
+    messageRecord = data;
+    await applyPendingMessageStatuses(supabaseAdmin(), accountId, waMessageId);
+  }
+
+  if (!messageRecord) {
     throw new SendMessageError(
       'db_error',
-      `Message sent to Meta but failed to save to DB: ${msgError.message}`,
+      'Message record is unavailable',
       500
     );
   }
-
-  await applyPendingMessageStatuses(supabaseAdmin(), accountId, waMessageId);
 
   const lastMessageText =
     messageType === 'interactive'
       ? interactivePayloadPreviewText(interactivePayload!)
       : persistedText || `[${messageType}]`;
 
-  await db
-    .from('conversations')
-    .update({
-      last_message_text: lastMessageText,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversationId);
+  await refreshConversationSummary(db, conversationId, lastMessageText);
 
   // Pause any active Flow run for this contact — the agent stepping in
   // is the strongest "yield, human is here" signal. Best-effort.
-  try {
-    const { error: pauseErr } = await supabaseAdmin()
-      .from('flow_runs')
-      .update({
-        status: 'paused_by_agent',
-        ended_at: new Date().toISOString(),
-        end_reason: 'agent_replied',
-      })
-      .eq('account_id', accountId)
-      .eq('contact_id', contact.id)
-      .eq('status', 'active');
-    if (pauseErr) {
-      console.error('[flows] pause-on-agent-send failed:', pauseErr.message);
-    }
-  } catch (err) {
-    console.error(
-      '[flows] pause-on-agent-send threw:',
-      err instanceof Error ? err.message : err
-    );
-  }
+  await pauseActiveFlow(accountId, contact.id);
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };
 }

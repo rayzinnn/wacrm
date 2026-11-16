@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
@@ -163,6 +163,11 @@ describe('SendMessageError', () => {
 // ============================================================
 
 const sendTemplateMessage = vi.fn(async () => ({ messageId: 'wamid.1' }));
+const evolution = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  events: [] as string[],
+  flowPauses: [] as Array<Record<string, unknown>>,
+}));
 
 // Stub only the senders — the module also exports INTERACTIVE_LIMITS,
 // which `interactive.ts` needs for the payload validation covered above.
@@ -183,14 +188,42 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
 }));
 
 vi.mock('@/lib/flows/admin-client', () => ({
-  // Only used for the best-effort "pause active flow run" write.
   supabaseAdmin: () => ({
-    from: () => ({
-      update: () => ({
-        eq: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
-      }),
-    }),
+    rpc: (name: string, args: Record<string, unknown>) =>
+      evolution.rpc(name, args),
+    from: (table: string) => {
+      const builder: Record<string, unknown> = {};
+      builder.update = (row: Record<string, unknown>) => {
+        if (table === 'flow_runs') evolution.flowPauses.push(row);
+        return builder;
+      };
+      builder.eq = () => builder;
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        resolve({ data: null, error: null });
+      return builder;
+    },
   }),
+}));
+
+vi.mock('server-only', () => ({}));
+vi.mock('./evolution/store', () => ({
+  loadConnection: vi.fn(async (accountId: string) =>
+    accountId === 'acct-1'
+      ? {
+          id: 'connection-1',
+          accountId,
+          createdBy: 'user-1',
+          credentials: {
+            baseUrl: 'http://127.0.0.1:8080',
+            instanceId: 'wacrm-test',
+            token: 'test-token',
+          },
+          webhookSecret: 'not-used',
+          state: 'connected',
+          checkedAt: null,
+        }
+      : null
+  ),
 }));
 
 const applyPendingMessageStatuses = vi.hoisted(() => vi.fn(async () => []));
@@ -201,6 +234,8 @@ vi.mock('@/lib/whatsapp/message-status-sync', () => ({
 interface CapturedWrites {
   message?: Record<string, unknown>;
   conversation?: Record<string, unknown>;
+  conversationFilters?: Array<[string, unknown]>;
+  conversationGuards?: string[];
 }
 
 /**
@@ -212,7 +247,8 @@ interface CapturedWrites {
 function sendPathDb(
   templateRows: unknown[],
   captured: CapturedWrites,
-  contact: Record<string, unknown> = { id: 'ct-1', phone: '+15551234567' }
+  contact: Record<string, unknown> = { id: 'ct-1', phone: '+15551234567' },
+  conversationLastMessageAt: string | null = null
 ): SupabaseClient {
   const conversation = {
     id: 'cv-1',
@@ -226,18 +262,51 @@ function sendPathDb(
 
   return {
     from(table: string) {
+      let pendingConversationUpdate: Record<string, unknown> | undefined;
+      let conversationUpdateGuarded = false;
       const builder: Record<string, unknown> = {
         select: () => builder,
-        eq: () => builder,
+        eq: (column: string, value: unknown) => {
+          if (table === 'conversations')
+            captured.conversationFilters?.push([column, value]);
+          return builder;
+        },
         insert: (row: Record<string, unknown>) => {
           if (table === 'messages') captured.message = row;
           return builder;
         },
         update: (row: Record<string, unknown>) => {
-          if (table === 'conversations') captured.conversation = row;
+          if (table === 'conversations') pendingConversationUpdate = row;
           return builder;
         },
-        maybeSingle: async () => ({ data: null, error: null }),
+        or: (filter: string) => {
+          if (table === 'conversations') {
+            conversationUpdateGuarded = true;
+            captured.conversationGuards?.push(filter);
+            const createdAt = filter.split('.lte.')[1];
+            if (
+              pendingConversationUpdate &&
+              (!conversationLastMessageAt ||
+                (createdAt &&
+                  Date.parse(conversationLastMessageAt) <=
+                    Date.parse(createdAt)))
+            ) {
+              captured.conversation = pendingConversationUpdate;
+            }
+          }
+          return builder;
+        },
+        maybeSingle: async () =>
+          table === 'messages'
+            ? {
+                data: {
+                  message_id: 'remote-1',
+                  content_text: 'hi',
+                  created_at: '2026-11-16T10:00:00.000Z',
+                },
+                error: null,
+              }
+            : { data: null, error: null },
         single: async () => {
           if (table === 'conversations') {
             return { data: conversation, error: null };
@@ -249,16 +318,75 @@ function sendPathDb(
           return { data: null, error: null };
         },
         // Bare-await result — only message_templates is read this way.
-        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) =>
+        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) => {
+          if (
+            table === 'conversations' &&
+            pendingConversationUpdate &&
+            !conversationUpdateGuarded
+          ) {
+            captured.conversation = pendingConversationUpdate;
+          }
           resolve({
             data: table === 'message_templates' ? templateRows : [],
             error: null,
-          }),
+          });
+        },
       };
       return builder;
     },
   } as unknown as SupabaseClient;
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  evolution.events.length = 0;
+  evolution.flowPauses.length = 0;
+  vi.stubEnv('EVOLUTION_ALLOWED_ORIGINS', 'http://127.0.0.1:8080');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      evolution.events.push('post');
+      return Response.json({
+        key: {
+          id: 'remote-1',
+          fromMe: true,
+          remoteJid: '15551234567@s.whatsapp.net',
+        },
+      });
+    })
+  );
+  evolution.rpc.mockImplementation(async (name: string) => {
+    evolution.events.push(`rpc:${name}`);
+    if (name === 'reserve_evolution_send') {
+      return {
+        data: [
+          {
+            attempt_id: 'attempt-1',
+            message_row_id: 'message-row-1',
+            outcome: 'pending',
+            should_send: true,
+          },
+        ],
+        error: null,
+      };
+    }
+    return {
+      data: [
+        {
+          attempt_id: 'attempt-1',
+          outcome: 'accepted',
+          message_row_id: 'message-row-1',
+        },
+      ],
+      error: null,
+    };
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 const TEMPLATE_ROW = {
   id: 'tpl-1',
@@ -298,35 +426,47 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
 
   it('records which teammate sent the message', async () => {
     const captured: CapturedWrites = {};
-    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
-      conversationId: 'cv-1',
-      messageType: 'template',
-      templateName: 'order_update',
-      templateMessageParams: { body: ['A1', 'Friday'] },
-      senderId: 'user-42',
-    });
+    await sendMessageToConversation(
+      sendPathDb([TEMPLATE_ROW], captured),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateMessageParams: { body: ['A1', 'Friday'] },
+        senderId: 'user-42',
+      }
+    );
     expect(captured.message?.sender_id).toBe('user-42');
   });
 
   it('leaves sender_id empty when no teammate is known', async () => {
     const captured: CapturedWrites = {};
-    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
-      conversationId: 'cv-1',
-      messageType: 'template',
-      templateName: 'order_update',
-      templateMessageParams: { body: ['A1', 'Friday'] },
-    });
+    await sendMessageToConversation(
+      sendPathDb([TEMPLATE_ROW], captured),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateMessageParams: { body: ['A1', 'Friday'] },
+      }
+    );
     expect(captured.message?.sender_id).toBeNull();
   });
 
   it('reads body values out of the structured params shape too', async () => {
     const captured: CapturedWrites = {};
-    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
-      conversationId: 'cv-1',
-      messageType: 'template',
-      templateName: 'order_update',
-      templateMessageParams: { body: ['B456', 'Monday'] },
-    });
+    await sendMessageToConversation(
+      sendPathDb([TEMPLATE_ROW], captured),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateMessageParams: { body: ['B456', 'Monday'] },
+      }
+    );
     expect(captured.message?.content_text).toBe(
       'Your order B456 ships on Monday'
     );
@@ -334,30 +474,39 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
 
   it("does not override the composer's pre-rendered text", async () => {
     const captured: CapturedWrites = {};
-    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
-      conversationId: 'cv-1',
-      messageType: 'template',
-      templateName: 'order_update',
-      templateParams: ['A123', 'Friday'],
-      contentText: 'rendered by the composer',
-    });
+    await sendMessageToConversation(
+      sendPathDb([TEMPLATE_ROW], captured),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateParams: ['A123', 'Friday'],
+        contentText: 'rendered by the composer',
+      }
+    );
     expect(captured.message?.content_text).toBe('rendered by the composer');
   });
 
   it("sends the local row's language when the caller names none", async () => {
     sendTemplateMessage.mockClear();
     const captured: CapturedWrites = {};
-    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
-      conversationId: 'cv-1',
-      messageType: 'template',
-      templateName: 'order_update',
-      templateParams: ['A123', 'Friday'],
-    });
+    await sendMessageToConversation(
+      sendPathDb([TEMPLATE_ROW], captured),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateParams: ['A123', 'Friday'],
+      }
+    );
     // Previously pinned to 'en_US', which matched no row and made Meta
     // reject the send as a missing translation.
     expect(
-      (sendTemplateMessage.mock.calls[0] as unknown as [{ language: string }])[0]
-        .language
+      (
+        sendTemplateMessage.mock.calls[0] as unknown as [{ language: string }]
+      )[0].language
     ).toBe('en');
   });
 
@@ -403,13 +552,17 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
 
   it('stores no media for a template without a media header', async () => {
     const captured: CapturedWrites = {};
-    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
-      conversationId: 'cv-1',
-      messageType: 'template',
-      templateName: 'order_update',
-      templateParams: ['A123', 'Friday'],
-      mediaUrl: 'https://cdn.example.com/ignored.png',
-    });
+    await sendMessageToConversation(
+      sendPathDb([TEMPLATE_ROW], captured),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateParams: ['A123', 'Friday'],
+        mediaUrl: 'https://cdn.example.com/ignored.png',
+      }
+    );
     expect(captured.message?.media_url).toBeNull();
   });
 });
@@ -417,116 +570,225 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
 // ============================================================
 // Business-scoped user IDs (issue #519)
 //
-// Meta withholds the phone number for a customer who has adopted a
-// WhatsApp username, so their contact row carries only `wa_user_id`.
-// The send path used to reject those outright with "Contact phone
-// number not found" — the business could receive their messages but
-// never answer them.
-// ============================================================
+describe('sendMessageToConversation — Evolution text delivery', () => {
+  const params = {
+    conversationId: 'cv-1',
+    messageType: 'text',
+    contentText: 'hi',
+    senderId: 'user-42',
+    requestId: 'caller-owned-request-1',
+  };
 
-const BSUID = 'US.13491208655302741918';
-
-describe('sendMessageToConversation — BSUID recipients (#519)', () => {
-  it('sends to the BSUID when the contact has no phone number', async () => {
-    const captured: CapturedWrites = {};
+  it('reserves before one Evolution POST and does not fabricate a message row', async () => {
+    const captured: CapturedWrites = { conversationFilters: [] };
     const { sendTextMessage } = await import('@/lib/whatsapp/meta-api');
-    vi.mocked(sendTextMessage).mockClear();
 
-    await sendMessageToConversation(
-      sendPathDb([], captured, { id: 'ct-1', phone: '', wa_user_id: BSUID }),
+    const result = await sendMessageToConversation(
+      sendPathDb([], captured),
       'acct-1',
-      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+      params
     );
 
-    expect(vi.mocked(sendTextMessage)).toHaveBeenCalledWith(
-      expect.objectContaining({ to: BSUID })
+    expect(evolution.events).toEqual([
+      'rpc:reserve_evolution_send',
+      'post',
+      'rpc:complete_evolution_send',
+    ]);
+    expect(evolution.rpc.mock.calls[0]).toMatchObject([
+      'reserve_evolution_send',
+      {
+        p_connection_id: 'connection-1',
+        p_conversation_id: 'cv-1',
+        p_sender_type: 'agent',
+        p_sender_id: 'user-42',
+        p_request_id: params.requestId,
+      },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe(
+      'http://127.0.0.1:8080/message/sendText/wacrm-test'
+    );
+    expect(vi.mocked(fetch).mock.calls[0][1]).toMatchObject({ method: 'POST' });
+    expect(sendTextMessage).not.toHaveBeenCalled();
+    expect(captured.message).toBeUndefined();
+    expect(captured.conversation).toMatchObject({ last_message_text: 'hi' });
+    expect(captured.conversationFilters).toContainEqual([
+      'account_id',
+      'acct-1',
+    ]);
+    expect(applyPendingMessageStatuses).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      messageId: 'message-row-1',
+      whatsappMessageId: 'remote-1',
+    });
+  });
+
+  it('replays an accepted reservation without another POST or message row', async () => {
+    const reservations = [
+      [
+        {
+          attempt_id: 'attempt-1',
+          message_row_id: 'message-row-1',
+          outcome: 'pending',
+          should_send: true,
+        },
+      ],
+      [
+        {
+          attempt_id: 'attempt-1',
+          message_row_id: 'message-row-1',
+          outcome: 'accepted',
+          should_send: false,
+        },
+      ],
+    ];
+    evolution.rpc.mockImplementation(async (name: string) => {
+      evolution.events.push(`rpc:${name}`);
+      if (name === 'reserve_evolution_send')
+        return { data: reservations.shift(), error: null };
+      return {
+        data: [
+          {
+            attempt_id: 'attempt-1',
+            outcome: 'accepted',
+            message_row_id: 'message-row-1',
+          },
+        ],
+        error: null,
+      };
+    });
+    const firstWrites: CapturedWrites = {};
+    const replayWrites: CapturedWrites = { conversationGuards: [] };
+
+    const first = await sendMessageToConversation(
+      sendPathDb([], firstWrites),
+      'acct-1',
+      params
+    );
+    evolution.flowPauses.length = 0;
+    const replay = await sendMessageToConversation(
+      sendPathDb([], replayWrites),
+      'acct-1',
+      params
+    );
+
+    expect(first).toEqual(replay);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(evolution.events).toEqual([
+      'rpc:reserve_evolution_send',
+      'post',
+      'rpc:complete_evolution_send',
+      'rpc:reserve_evolution_send',
+    ]);
+    expect(firstWrites.message).toBeUndefined();
+    expect(replayWrites.message).toBeUndefined();
+    expect(replayWrites.conversation).toMatchObject({
+      last_message_text: 'hi',
+      last_message_at: '2026-11-16T10:00:00.000Z',
+      updated_at: '2026-11-16T10:00:00.000Z',
+    });
+    expect(replayWrites.conversationGuards).toContain(
+      'last_message_at.is.null,last_message_at.lte.2026-11-16T10:00:00.000Z'
+    );
+    expect(evolution.flowPauses).toHaveLength(1);
+    expect(evolution.flowPauses[0]).toMatchObject({
+      status: 'paused_by_agent',
+      end_reason: 'agent_replied',
+    });
+  });
+
+  it('does not let an older accepted replay overwrite a newer conversation summary', async () => {
+    evolution.rpc.mockImplementation(async (name: string) => {
+      evolution.events.push(`rpc:${name}`);
+      return {
+        data: [
+          {
+            attempt_id: 'attempt-1',
+            message_row_id: 'message-row-1',
+            outcome: 'accepted',
+            should_send: false,
+          },
+        ],
+        error: null,
+      };
+    });
+    const captured: CapturedWrites = { conversationGuards: [] };
+
+    const result = await sendMessageToConversation(
+      sendPathDb(
+        [],
+        captured,
+        { id: 'ct-1', phone: '+15551234567' },
+        '2026-11-16T10:05:00.000Z'
+      ),
+      'acct-1',
+      params
+    );
+
+    expect(result).toEqual({
+      messageId: 'message-row-1',
+      whatsappMessageId: 'remote-1',
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(captured.message).toBeUndefined();
+    expect(captured.conversation).toBeUndefined();
+    expect(captured.conversationGuards).toContain(
+      'last_message_at.is.null,last_message_at.lte.2026-11-16T10:00:00.000Z'
+    );
+    expect(evolution.flowPauses).toHaveLength(1);
+  });
+
+  it('returns delivery_unknown after an ambiguous transport failure and pauses the active flow', async () => {
+    vi.mocked(fetch).mockRejectedValue(
+      new TypeError('simulated private network detail')
+    );
+    const captured: CapturedWrites = {};
+
+    await expect(
+      sendMessageToConversation(sendPathDb([], captured), 'acct-1', params)
+    ).rejects.toMatchObject({ code: 'delivery_unknown', status: 504 });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(evolution.rpc.mock.calls[1]).toMatchObject([
+      'complete_evolution_send',
+      { p_outcome: 'unknown' },
+    ]);
+    expect(captured.message).toBeUndefined();
+    expect(captured.conversation).toBeUndefined();
+    expect(evolution.flowPauses).toContainEqual(
+      expect.objectContaining({
+        status: 'paused_by_agent',
+        end_reason: 'agent_replied',
+      })
     );
   });
 
-  it('still prefers the phone number when the contact has both', async () => {
-    const captured: CapturedWrites = {};
-    const { sendTextMessage } = await import('@/lib/whatsapp/meta-api');
-    vi.mocked(sendTextMessage).mockClear();
-
-    await sendMessageToConversation(
-      sendPathDb([], captured, {
-        id: 'ct-1',
-        phone: '+15551234567',
-        wa_user_id: BSUID,
-      }),
-      'acct-1',
-      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
-    );
-
-    // Only the phone path supports the trunk-prefix variant retry, so
-    // it wins whenever we have a usable number.
-    expect(vi.mocked(sendTextMessage)).toHaveBeenCalledWith(
-      expect.objectContaining({ to: '15551234567' })
-    );
+  it('requires a caller-supplied request id before any database or transport call', async () => {
+    await expect(
+      sendMessageToConversation(noDb(), 'acct-1', {
+        conversationId: 'cv-1',
+        messageType: 'text',
+        contentText: 'hi',
+        senderId: 'user-42',
+      })
+    ).rejects.toMatchObject({ code: 'idempotency_key_required', status: 400 });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(evolution.rpc).not.toHaveBeenCalled();
   });
 
-  it('falls back to the BSUID when the stored phone is unusable', async () => {
-    const captured: CapturedWrites = {};
-    const { sendTextMessage } = await import('@/lib/whatsapp/meta-api');
-    vi.mocked(sendTextMessage).mockClear();
-
-    await sendMessageToConversation(
-      sendPathDb([], captured, {
-        id: 'ct-1',
-        phone: 'not-a-number',
-        wa_user_id: BSUID,
-      }),
-      'acct-1',
-      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
-    );
-
-    expect(vi.mocked(sendTextMessage)).toHaveBeenCalledWith(
-      expect.objectContaining({ to: BSUID })
-    );
-  });
-
-  it('400s when the contact has neither a usable phone nor a BSUID', async () => {
-    const captured: CapturedWrites = {};
+  it('does not send a phone-less BSUID through the Evolution text transport', async () => {
     await expect(
       sendMessageToConversation(
-        sendPathDb([], captured, { id: 'ct-1', phone: '' }),
+        sendPathDb(
+          [],
+          {},
+          { id: 'ct-1', phone: '', wa_user_id: 'US.13491234567890123456' }
+        ),
         'acct-1',
-        { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+        params
       )
-    ).rejects.toThrow(/no phone number or WhatsApp user ID/);
-  });
-
-  it('ignores a wa_user_id that is not BSUID-shaped', async () => {
-    const captured: CapturedWrites = {};
-    await expect(
-      sendMessageToConversation(
-        sendPathDb([], captured, {
-          id: 'ct-1',
-          phone: '',
-          wa_user_id: 'garbage',
-        }),
-        'acct-1',
-        { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
-      )
-    ).rejects.toThrow(/no phone number or WhatsApp user ID/);
-  });
-});
-
-describe('sendMessageToConversation — statuses that beat the insert', () => {
-  it('applies any status Meta delivered before the row existed', async () => {
-    applyPendingMessageStatuses.mockClear();
-
-    await sendMessageToConversation(
-      sendPathDb([], {}, { id: 'ct-1', phone: '+15551234567' }),
-      'acct-1',
-      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
-    );
-
-    expect(applyPendingMessageStatuses).toHaveBeenCalledTimes(1);
-    expect(applyPendingMessageStatuses).toHaveBeenCalledWith(
-      expect.anything(),
-      'acct-1',
-      'wamid.text'
-    );
+    ).rejects.toMatchObject({ status: 400 });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(evolution.rpc).not.toHaveBeenCalled();
   });
 });

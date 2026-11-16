@@ -10,6 +10,7 @@
 // Auth: API key with the `messages:send` scope. Account context (and
 // the service-role client) come from `requireApiKey`.
 //
+// Required text header: `Idempotency-Key: <stable request id>`.
 // Body:
 //   {
 //     "to": "+14155550123",                 // required, E.164
@@ -62,6 +63,29 @@ export async function POST(request: Request) {
     }
 
     const type = typeof body.type === 'string' ? body.type : 'text';
+    if (type !== 'text') {
+      return fail(
+        'unsupported_capability',
+        'This message type is not currently enabled for Evolution',
+        422
+      );
+    }
+
+    const requestId = request.headers.get('Idempotency-Key');
+    if (!requestId || !requestId.trim() || requestId.length > 200) {
+      return fail(
+        'idempotency_key_required',
+        'A stable Idempotency-Key is required for text messages',
+        400
+      );
+    }
+    if (!ctx.createdBy) {
+      return fail(
+        'sender_unavailable',
+        'The API key has no active sender for this account',
+        403
+      );
+    }
 
     // Unpack the optional `template` object into the flat params the
     // send core expects. `params` as an array → legacy positional body
@@ -110,10 +134,15 @@ export async function POST(request: Request) {
 
     if (resolved.conversationCreated) {
       after(() =>
-        dispatchWebhookEvent(ctx.supabase, ctx.accountId, 'conversation.created', {
-          conversation_id: resolved.conversationId,
-          contact_id: resolved.contactId,
-        })
+        dispatchWebhookEvent(
+          ctx.supabase,
+          ctx.accountId,
+          'conversation.created',
+          {
+            conversation_id: resolved.conversationId,
+            contact_id: resolved.contactId,
+          }
+        )
       );
     }
 
@@ -136,6 +165,8 @@ export async function POST(request: Request) {
           typeof body.reply_to_message_id === 'string'
             ? body.reply_to_message_id
             : null,
+        senderId: ctx.createdBy,
+        requestId,
       }
     );
 
