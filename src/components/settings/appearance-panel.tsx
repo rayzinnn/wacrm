@@ -25,13 +25,13 @@ export function AppearancePanel() {
   const t = useTranslations("Settings.appearance");
 
   return (
-    <section className="max-w-3xl animate-in fade-in-50 duration-200">
+    <section className="w-full max-w-4xl animate-in fade-in-50 duration-200">
       <SettingsPanelHead
         title={t("title")}
         description={t("description")}
       />
 
-      <div className="space-y-4">
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <SunMoon className="size-4 text-muted-foreground" />
           {t("mode")}
@@ -53,7 +53,7 @@ export function AppearancePanel() {
         </div>
       </div>
 
-      <div className="mt-8 space-y-4">
+      <div className="mt-6 space-y-4 rounded-2xl border border-border bg-card p-4 shadow-sm sm:mt-8 sm:p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <Palette className="size-4 text-muted-foreground" />
           {t("accentColor")}
@@ -97,7 +97,7 @@ function ModeCard({
       aria-checked={isActive}
       aria-label={t("useMode", { mode })}
       className={cn(
-        "flex items-center gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
+        "flex min-h-16 items-center gap-3 rounded-xl border bg-background p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
         isActive
           ? "border-primary/60 ring-2 ring-primary/40"
           : "border-border hover:border-border hover:bg-muted/40",
@@ -145,7 +145,7 @@ function ThemeCard({
       aria-pressed={isActive}
       aria-label={t("useTheme", { name })}
       className={cn(
-        "flex flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
+        "flex min-h-32 flex-col gap-3 rounded-xl border bg-background p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
         isActive
           ? "border-primary/60 ring-2 ring-primary/40"
           : "border-border hover:border-border hover:bg-muted/40",

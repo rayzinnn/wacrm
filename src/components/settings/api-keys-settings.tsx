@@ -135,7 +135,7 @@ export function ApiKeysSettings() {
   }
 
   return (
-    <section className="animate-in fade-in-50 space-y-6 duration-200">
+    <section className="w-full max-w-5xl animate-in fade-in-50 space-y-6 duration-200">
       <SettingsPanelHead
         title={t('title')}
         description={
@@ -155,7 +155,7 @@ export function ApiKeysSettings() {
       />
 
       {keys.length === 0 ? (
-        <Card>
+        <Card className="rounded-2xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
             <KeyRound className="text-muted-foreground size-6" />
             <p className="text-muted-foreground mt-2 text-sm">
@@ -177,7 +177,7 @@ export function ApiKeysSettings() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className="rounded-2xl shadow-sm">
           <CardContent className="p-0">
             <ul className="divide-border divide-y">
               {keys.map((k) => {

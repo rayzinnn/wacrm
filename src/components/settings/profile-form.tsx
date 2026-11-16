@@ -208,13 +208,13 @@ export function ProfileForm() {
     : '—';
 
   return (
-    <section className="max-w-2xl animate-in fade-in-50 duration-200">
+    <section className="w-full max-w-3xl animate-in fade-in-50 duration-200">
       <SettingsPanelHead
         title={t('title')}
         description={t('description')}
       />
       <form onSubmit={onSubmit} className="space-y-4">
-        <Card>
+        <Card className="rounded-2xl shadow-sm">
           <CardContent className="space-y-6">
           {/* Avatar row */}
           <div className="flex flex-wrap items-center gap-5">

@@ -126,7 +126,7 @@ export function QuickRepliesManager() {
   );
 
   return (
-    <div>
+    <div className="w-full max-w-5xl space-y-1">
       <SettingsPanelHead
         title={t("title")}
         description={t("description")}
@@ -149,9 +149,9 @@ export function QuickRepliesManager() {
       ) : (
         <ul className="flex flex-col gap-2">
           {items.map((qr) => (
-            <li
+          <li
               key={qr.id}
-              className="flex items-start gap-3 rounded-lg border border-border bg-card p-3"
+            className="flex min-w-0 items-start gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm"
             >
               {qr.kind === "interactive" ? (
                 <Zap className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -160,7 +160,7 @@ export function QuickRepliesManager() {
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">{qr.title}</p>
-                <p className="truncate text-xs text-muted-foreground">
+                <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground">
                   {qr.kind === "interactive" && qr.interactive_payload
                     ? interactivePayloadPreviewText(qr.interactive_payload)
                     : qr.content_text}

@@ -23,7 +23,7 @@ export function CustomFieldsSettings() {
   const t = useTranslations('Settings.tagsAndFields');
   
   return (
-    <Card>
+    <Card className="rounded-2xl shadow-sm">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-foreground">
           <SlidersHorizontal className="size-4 text-primary" />

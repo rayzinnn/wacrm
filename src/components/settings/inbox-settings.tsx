@@ -71,9 +71,9 @@ export function InboxSettings() {
   const disabled = !canEditSettings || profileLoading || saved === null;
 
   return (
-    <section className="max-w-2xl animate-in fade-in-50 duration-200">
+    <section className="w-full max-w-3xl animate-in fade-in-50 duration-200">
       <SettingsPanelHead title={t("title")} description={t("description")} />
-      <Card>
+      <Card className="rounded-2xl shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
             <Timer className="size-4 text-primary" />

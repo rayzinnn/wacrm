@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useMemo, type ReactNode } from 'react';
+import { CircleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -19,6 +20,7 @@ import { DealsSettings } from '@/components/settings/deals-settings';
 import { InboxSettings } from '@/components/settings/inbox-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
+import { TemplateManager } from '@/components/settings/template-manager';
 import { getEvolutionCapabilities } from '@/lib/whatsapp/evolution/capabilities';
 import {
   resolveSection,
@@ -79,20 +81,27 @@ function SettingsPageInner() {
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
     whatsapp: <WhatsAppConfig />,
-    templates: capabilities.templates ? null : (
+    templates: capabilities.templates ? <TemplateManager /> : (
       <section
         aria-labelledby="templates-unavailable-title"
-        className="rounded-xl border border-border bg-card p-5"
+        className="rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6"
       >
-        <h2 id="templates-unavailable-title" className="text-base font-semibold text-foreground">
-          {tUnavailable('title')}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {tUnavailable('description')}
-        </p>
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+            <CircleAlert className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h2 id="templates-unavailable-title" className="text-lg font-semibold text-foreground">
+              {tUnavailable('title')}
+            </h2>
+            <p className="mt-1 max-w-[68ch] text-sm leading-relaxed text-muted-foreground">
+              {tUnavailable('description')}
+            </p>
+          </div>
+        </div>
         <Link
           href="/settings?tab=whatsapp"
-          className="mt-4 inline-flex min-h-10 items-center rounded-lg px-3 py-2 text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-5 inline-flex min-h-11 items-center rounded-xl border border-border bg-background px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           {tUnavailable('connectionLink')}
         </Link>
@@ -107,19 +116,21 @@ function SettingsPageInner() {
   };
 
   return (
-    <div>
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+    <div className="mx-auto w-full max-w-[1680px] space-y-8 pb-10">
+      <header className="max-w-3xl">
+        <h1 className="text-[clamp(1.75rem,3vw,2.5rem)] font-semibold leading-[1.08] tracking-tight text-foreground">
           {t('pageTitle')}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-2 max-w-[68ch] text-sm leading-relaxed text-muted-foreground">
           {t('pageDesc')}
         </p>
-      </div>
+      </header>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[232px_minmax(0,1fr)] lg:items-start xl:gap-8">
         <SettingsRail active={section} onSelect={go} hints={hints} />
-        <div className="min-w-0">{panel[section]}</div>
+        <div id="settings-content" className="min-w-0">
+          {panel[section]}
+        </div>
       </div>
     </div>
   );

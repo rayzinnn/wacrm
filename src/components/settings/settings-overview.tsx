@@ -243,9 +243,9 @@ export function SettingsOverview({
   ];
 
   return (
-    <section className="animate-in fade-in-50 duration-200">
+    <section className="animate-in fade-in-50 space-y-6 duration-200">
       {/* Identity */}
-      <Card className="flex-row items-center gap-4 px-5 py-5">
+      <Card className="flex-row items-center gap-4 rounded-2xl px-5 py-5 shadow-sm">
         <Avatar size="lg" className="size-14">
           {profile?.avatar_url ? (
             <AvatarImage src={profile.avatar_url} alt={displayName} />
@@ -273,7 +273,7 @@ export function SettingsOverview({
       </Card>
 
       {/* Status tiles */}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {tiles
           .filter(({ section }) => section !== 'templates' || capabilities.templates)
           .map(({ section, loading, subtitle }) => {
@@ -285,7 +285,7 @@ export function SettingsOverview({
               type="button"
               onClick={() => onSelect(section)}
               className={cn(
-                'group flex items-start gap-3.5 rounded-xl border border-border bg-card p-4 text-left transition-colors',
+                'group flex min-h-24 items-start gap-3.5 rounded-2xl border border-border bg-card p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 'hover:border-primary-soft-2 hover:bg-card-2',
               )}
             >

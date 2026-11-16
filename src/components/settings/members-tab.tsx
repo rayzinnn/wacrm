@@ -281,7 +281,7 @@ export function MembersTab() {
   }
 
   return (
-    <section className="animate-in fade-in-50 space-y-6 duration-200">
+    <section className="w-full max-w-6xl animate-in fade-in-50 space-y-6 duration-200">
       <SettingsPanelHead
         title={t('title')}
         description={t('description')}
@@ -322,7 +322,7 @@ export function MembersTab() {
         })()}
 
       {/* Roster */}
-      <Card>
+      <Card className="overflow-hidden rounded-2xl shadow-sm">
         <CardContent className="p-0">
           <ul className="divide-y divide-border">
             {members.map((member) => {
@@ -497,7 +497,7 @@ export function MembersTab() {
           ) : null}
 
           {invitations.length === 0 ? (
-            <Card>
+            <Card className="rounded-2xl shadow-sm">
               <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                 <Mail className="size-6 text-muted-foreground" />
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -509,7 +509,7 @@ export function MembersTab() {
               </CardContent>
             </Card>
           ) : (
-            <Card>
+            <Card className="overflow-hidden rounded-2xl shadow-sm">
               <CardContent className="p-0">
                 <ul className="divide-y divide-border">
                   {invitations.map((inv) => {

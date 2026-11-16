@@ -575,9 +575,9 @@ export function WhatsAppConfig() {
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-6">
-            <Card>
+          <Card className="min-w-0 rounded-2xl shadow-sm">
               <CardHeader>
                 <CardTitle className="text-foreground">{t('sessionState')}</CardTitle>
                 <CardDescription>{stateDetail}</CardDescription>
@@ -671,7 +671,7 @@ export function WhatsAppConfig() {
             </Card>
 
             {canShowConnectionForm && canEditSettings && (
-              <Card>
+              <Card className="min-w-0 rounded-2xl shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-foreground">{t('configTitle')}</CardTitle>
                   <CardDescription>{t('configDescription')}</CardDescription>
@@ -792,7 +792,7 @@ export function WhatsAppConfig() {
           </div>
 
           <aside className="space-y-6">
-            <Card>
+            <Card className="min-w-0 rounded-2xl shadow-sm">
               <CardHeader>
                 <CardTitle className="text-foreground text-base">{t('operatorGuidanceTitle')}</CardTitle>
                 <CardDescription>{t('operatorGuidance')}</CardDescription>
