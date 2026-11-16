@@ -46,11 +46,14 @@ function jsonResponse(
   })
 }
 
-function mediaError(promise: Promise<unknown>): Promise<EvolutionMediaError> {
-  return promise.catch((error: unknown) => {
+async function mediaError(promise: Promise<unknown>): Promise<EvolutionMediaError> {
+  try {
+    await promise
+  } catch (error: unknown) {
     if (error instanceof EvolutionMediaError) return error
     throw error
-  })
+  }
+  throw new Error('Expected media resolution to fail.')
 }
 
 beforeEach(() => {

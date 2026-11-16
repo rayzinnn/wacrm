@@ -200,7 +200,7 @@ function declaredFileLength(value: unknown): bigint | null {
   ) {
     const low = BigInt((value.low as number) >>> 0)
     const high = BigInt((value.high as number) >>> 0)
-    return (high << 32n) | low
+    return (high << BigInt(32)) | low
   }
 
   fail('invalid_response')
