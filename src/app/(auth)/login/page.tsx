@@ -1,21 +1,20 @@
-"use client";
+'use client';
 
-import { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { useTranslations } from 'next-intl';
+import { createClient } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, UsersRound } from "lucide-react";
+} from '@/components/ui/card';
+import { MessageSquare, UsersRound } from 'lucide-react';
 
 // `useSearchParams` opts the component out of static prerendering
 // unless it sits under a Suspense boundary. We split the form into
@@ -35,20 +34,20 @@ function LoginPageInner() {
   // Forwarded from `/join/<token>` when the visitor already has an
   // account. After a successful sign-in we send them to the join
   // page to accept rather than to /dashboard.
-  const inviteToken = searchParams.get("invite");
-  const t = useTranslations("LoginPage");
+  const inviteToken = searchParams.get('invite');
+  const t = useTranslations('LoginPage');
   // Set by /auth/callback when an emailed link (confirmation, password
   // reset) could not be turned into a session — see src/lib/auth/callback.ts.
-  const linkError = searchParams.get("error");
+  const linkError = searchParams.get('error');
   const linkErrorMessage =
-    linkError === "link_expired"
-      ? t("linkExpired")
-      : linkError === "link_invalid"
-        ? t("linkInvalid")
+    linkError === 'link_expired'
+      ? t('linkExpired')
+      : linkError === 'link_invalid'
+        ? t('linkInvalid')
         : null;
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
@@ -79,39 +78,43 @@ function LoginPageInner() {
     // reload the invite-accept flow already uses in join/[token].
     const destination = inviteToken
       ? `/join/${encodeURIComponent(inviteToken)}`
-      : "/dashboard";
+      : '/dashboard';
     window.location.href = destination;
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+    <div className="w-full">
+      <Card className="border-border bg-card w-full max-w-md rounded-2xl py-6 shadow-sm">
+        <CardHeader className="items-start text-left">
+          <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-xl">
             {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
+              <UsersRound className="text-primary h-6 w-6" />
             ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
+              <MessageSquare className="text-primary h-6 w-6" />
             )}
           </div>
-          <CardTitle className="text-xl text-foreground">
+          <h1 className="text-foreground text-[clamp(1.5rem,4vw,1.875rem)] leading-tight font-semibold tracking-tight">
             {inviteToken ? t('titleAccept') : t('titleWelcome')}
-          </CardTitle>
+          </h1>
           <CardDescription className="text-muted-foreground">
-            {inviteToken
-              ? t('descAccept')
-              : t('descWelcome')}
+            {inviteToken ? t('descAccept') : t('descWelcome')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             {linkErrorMessage && !error && (
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+              <div
+                role="alert"
+                className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-800 dark:text-amber-200"
+              >
                 {linkErrorMessage}
               </div>
             )}
             {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <div
+                role="alert"
+                className="border-destructive/20 bg-destructive/10 text-destructive rounded-xl border px-4 py-3 text-sm leading-relaxed"
+              >
                 {error}
               </div>
             )}
@@ -123,11 +126,13 @@ function LoginPageInner() {
               <Input
                 id="email"
                 type="email"
+                name="email"
+                autoComplete="email"
                 placeholder={t('emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20 h-11 rounded-xl"
               />
             </div>
 
@@ -138,16 +143,18 @@ function LoginPageInner() {
               <Input
                 id="password"
                 type="password"
+                name="password"
+                autoComplete="current-password"
                 placeholder={t('passwordPlaceholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20 h-11 rounded-xl"
               />
               {/* Below the input so Tab goes email -> password -> link. */}
               <Link
                 href="/forgot-password"
-                className="self-end text-sm text-primary hover:text-primary/80"
+                className="text-primary focus-visible:ring-ring focus-visible:ring-offset-card min-h-11 self-end px-1 text-sm font-medium underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
               >
                 {t('forgotPassword')}
               </Link>
@@ -156,21 +163,21 @@ function LoginPageInner() {
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 h-11 w-full rounded-xl disabled:opacity-50"
             >
               {loading ? t('signingIn') : t('signIn')}
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            {t('noAccount')}{" "}
+          <p className="text-muted-foreground mt-6 text-center text-sm">
+            {t('noAccount')}{' '}
             <Link
               href={
                 inviteToken
                   ? `/signup?invite=${encodeURIComponent(inviteToken)}`
-                  : "/signup"
+                  : '/signup'
               }
-              className="text-primary hover:text-primary/80"
+              className="text-primary focus-visible:ring-ring focus-visible:ring-offset-card rounded-sm font-medium underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
             >
               {t('createAccount')}
             </Link>

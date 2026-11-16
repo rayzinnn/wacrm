@@ -1,5 +1,5 @@
 // ============================================================
-// /join/[token] layout — minimal full-bleed dark shell.
+// /join/[token] layout — hybrid invitation access in the SIS auth frame.
 //
 // The route group sits outside both `(auth)` and `(dashboard)`
 // because it's hybrid: the page must render for anonymous
@@ -10,9 +10,8 @@
 // visitors through its login redirect. A dedicated layout
 // avoids both.
 //
-// Styling matches the login / signup pages — centered card on a
-// slate-950 background — so the join experience feels like a
-// natural step in the auth funnel rather than a foreign page.
+// The shared auth frame preserves the invitation's standalone route
+// while using the same identity panel and form surface as login.
 //
 // Referrer-Policy: no-referrer
 //   The plaintext invite token lives in the URL path. Without
@@ -27,6 +26,7 @@
 
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { AuthFrame } from '../(auth)/_components/auth-frame';
 
 export const metadata: Metadata = {
   referrer: 'no-referrer',
@@ -36,9 +36,5 @@ export const metadata: Metadata = {
 };
 
 export default function JoinLayout({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      {children}
-    </div>
-  );
+  return <AuthFrame>{children}</AuthFrame>;
 }

@@ -1,24 +1,23 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import Link from "next/link";
-import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useState } from 'react';
+import Link from 'next/link';
+import { useTranslations } from 'next-intl';
+import { createClient } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, CheckCircle, ArrowLeft } from "lucide-react";
+} from '@/components/ui/card';
+import { MessageSquare, CheckCircle, ArrowLeft } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
-  const t = useTranslations("ForgotPasswordPage");
-  const [email, setEmail] = useState("");
+  const t = useTranslations('ForgotPasswordPage');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -35,7 +34,7 @@ export default function ForgotPasswordPage() {
     // URL Configuration → Redirect URLs, or it silently falls back to
     // its Site URL; see docs/auth-emails.md.
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/reset-password")}`,
+      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent('/reset-password')}`,
     });
 
     if (error) {
@@ -50,17 +49,17 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
-          <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
+      <div className="w-full">
+        <Card className="border-border bg-card w-full max-w-md rounded-2xl py-6 shadow-sm">
+          <CardHeader className="items-start text-left">
+            <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-xl">
+              <CheckCircle className="text-primary h-6 w-6" />
             </div>
-            <CardTitle className="text-xl text-foreground">
-              {t("checkEmailTitle")}
-            </CardTitle>
+            <h1 className="text-foreground text-[clamp(1.5rem,4vw,1.875rem)] leading-tight font-semibold tracking-tight">
+              {t('checkEmailTitle')}
+            </h1>
             <CardDescription className="text-muted-foreground">
-              {t.rich("checkEmailDesc", {
+              {t.rich('checkEmailDesc', {
                 email,
                 strong: (chunks) => (
                   <span className="text-foreground">{chunks}</span>
@@ -72,9 +71,9 @@ export default function ForgotPasswordPage() {
             <Link href="/login">
               <Button
                 variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="border-border text-foreground hover:bg-muted h-11 w-full rounded-xl"
               >
-                {t("backToSignIn")}
+                {t('backToSignIn')}
               </Button>
             </Link>
           </CardContent>
@@ -84,55 +83,62 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <MessageSquare className="h-6 w-6 text-primary" />
+    <div className="w-full">
+      <Card className="border-border bg-card w-full max-w-md rounded-2xl py-6 shadow-sm">
+        <CardHeader className="items-start text-left">
+          <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-xl">
+            <MessageSquare className="text-primary h-6 w-6" />
           </div>
-          <CardTitle className="text-xl text-foreground">{t("title")}</CardTitle>
+          <h1 className="text-foreground text-[clamp(1.5rem,4vw,1.875rem)] leading-tight font-semibold tracking-tight">
+            {t('title')}
+          </h1>
           <CardDescription className="text-muted-foreground">
-            {t("desc")}
+            {t('desc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleReset} className="flex flex-col gap-4">
             {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <div
+                role="alert"
+                className="border-destructive/20 bg-destructive/10 text-destructive rounded-xl border px-4 py-3 text-sm leading-relaxed"
+              >
                 {error}
               </div>
             )}
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="email" className="text-muted-foreground">
-                {t("emailLabel")}
+                {t('emailLabel')}
               </Label>
               <Input
                 id="email"
                 type="email"
-                placeholder={t("emailPlaceholder")}
+                name="email"
+                autoComplete="email"
+                placeholder={t('emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20 h-11 rounded-xl"
               />
             </div>
 
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 h-11 w-full rounded-xl disabled:opacity-50"
             >
-              {loading ? t("sending") : t("sendLink")}
+              {loading ? t('sending') : t('sendLink')}
             </Button>
           </form>
 
           <Link
             href="/login"
-            className="mt-6 flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring focus-visible:ring-offset-card mt-6 flex min-h-11 items-center justify-center gap-2 rounded-lg px-2 text-sm font-medium underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <ArrowLeft className="h-4 w-4" />
-            {t("backToSignIn")}
+            {t('backToSignIn')}
           </Link>
         </CardContent>
       </Card>
