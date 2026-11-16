@@ -74,6 +74,14 @@ As fixtures vieram de chamadas HTTP locais reais neste boot. Removem credenciais
 - Bruto do primeiro callback fica somente em `infra/evolution/private/T03.c1-*/callback-first-attempt.json`, diretório 0700 e arquivo 0600, ignorado pelo Git. Fixture sanitizada: `infra/evolution/fixtures/connection-update.observed.sanitized.json`; roteiro: `infra/evolution/verify-callback.py`.
 - Limite: isso verifica o formato do callback e o retry HTTP do Evolution 2.3.7. O HTTP 200 foi respondido pelo receptor de teste; não houve ingestão/ACK transacional ou persistência no Postgres do CRM. Não demonstra entrega de outros eventos, webhook de mensagem, mídia, recuperação após reinício nem funcionamento com dispositivo pareado.
 
+### Normalização `CONNECTION_UPDATE` — T05.b1
+
+- Interface: `export type NormalizedEvent = { kind: "connection"; eventKey: string; occurredAt: string }` e `normalizeWebhook(payload: unknown, receivedAt: string): NormalizedEvent[]`.
+- `receivedAt` é o timestamp ISO UTC canônico criado pelo receptor; nunca é lido do payload. Para `connection.update`, valida-se o envelope e `data` observados: instância de topo não vazia, `data.instance` não vazia e idêntica, `data.state` string e `date_time` string não vazia. Entrada/horário inválidos lançam `NormalizationError` genérico, sem incluir conteúdo recebido.
+- Só `connection.update` é normalizado neste recorte. Eventos desconhecidos retornam `[]`; isso não habilita suporte a mensagens. A saída usa `occurredAt=receivedAt`.
+- A identidade é `sha256:` + SHA-256 de JSON com campos e ordem fixos `{event, instance, state, providerTime: date_time}`. Ela não inclui `receivedAt`, `apikey`, `destination` ou `server_url`; portanto replay do callback mantém a mesma `eventKey`. O `date_time` do provedor contribui somente para identidade e nunca é convertido/corrigido como relógio. Usar o `receivedAt` do receptor como horário normalizado de conexão conforme a fonte/runtime observados em T03.c1.
+- Evidência e testes literais: `docs/project/evidence/T05.b1.md` e `src/lib/whatsapp/evolution/events.test.ts`, usando `infra/evolution/fixtures/connection-update.observed.sanitized.json`.
+
 ## Ainda pendente
 
 - Pareamento humano e ciclo de conexão persistente; a observação apenas moveu o estado para `connecting`.
