@@ -1,133 +1,185 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   user: { id: 'user-1' } as { id: string } | null,
-  accountId: 'acc-1' as string | null,
-  downloadContentType: 'image/jpeg',
-  metaMimeType: 'image/jpeg',
+  accountId: 'account-1' as string | null,
+  clientError: null as string | null,
   rateLimitOk: true,
-}))
+  authCalls: 0,
+  rateLimitCalls: 0,
+  tables: [] as string[],
+  filters: [] as Array<[string, string, string]>,
+  getMediaUrl: vi.fn(),
+  downloadMedia: vi.fn(),
+}));
 
 vi.mock('next/server', () => ({
   NextResponse: {
-    json: (body: unknown, init?: { status?: number }) =>
-      new Response(JSON.stringify(body), {
-        status: init?.status ?? 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    json: (body: unknown, init: ResponseInit = {}) => {
+      const headers = new Headers(init.headers);
+      headers.set('Content-Type', 'application/json');
+      return new Response(JSON.stringify(body), { ...init, headers });
+    },
   },
-}))
+}));
 
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({
-    auth: {
-      getUser: async () => ({ data: { user: h.user }, error: null }),
-    },
-    from(table: string) {
-      const chain = {
-        select: () => chain,
-        eq: () => chain,
-        maybeSingle: async () => ({
-          data: table === 'profiles' && h.accountId ? { account_id: h.accountId } : null,
-        }),
-        single: async () => ({
-          data: table === 'whatsapp_config' ? { access_token: 'enc-token' } : null,
-          error: null,
-        }),
-      }
-      return chain
-    },
-  }),
-}))
-
-vi.mock('@/lib/whatsapp/encryption', () => ({
-  decrypt: (value: string) => `plain-${value}`,
-}))
+  createClient: async () => {
+    if (h.clientError) throw new Error(h.clientError);
+    return {
+      auth: {
+        getUser: async () => {
+          h.authCalls += 1;
+          return { data: { user: h.user }, error: null };
+        },
+      },
+      from(table: string) {
+        h.tables.push(table);
+        const chain = {
+          select: () => chain,
+          eq: (column: string, value: string) => {
+            h.filters.push([table, column, value]);
+            return chain;
+          },
+          maybeSingle: async () => ({
+            data:
+              table === 'profiles' && h.accountId
+                ? { account_id: h.accountId }
+                : null,
+            error: null,
+          }),
+        };
+        return chain;
+      },
+    };
+  },
+}));
 
 vi.mock('@/lib/rate-limit', () => ({
   RATE_LIMITS: { whatsappMedia: { limit: 240, windowMs: 60_000 } },
-  checkRateLimit: () => ({ success: h.rateLimitOk }),
+  checkRateLimit: () => {
+    h.rateLimitCalls += 1;
+    return { success: h.rateLimitOk };
+  },
   rateLimitResponse: () => new Response(null, { status: 429 }),
-}))
+}));
 
 vi.mock('@/lib/whatsapp/meta-api', () => ({
-  getMediaUrl: async () => ({
-    url: 'https://lookaside.example/media',
-    mimeType: h.metaMimeType,
-    fileSize: 3,
-  }),
-  downloadMedia: async () => ({
-    buffer: Buffer.from('abc'),
-    contentType: h.downloadContentType,
-  }),
-}))
+  getMediaUrl: h.getMediaUrl,
+  downloadMedia: h.downloadMedia,
+}));
 
-import { GET } from './route'
+import { GET } from './route';
 
-function call(mediaId = '1234567890') {
+const fetchMock = vi.fn();
+
+function call(mediaId = 'media-1') {
   return GET(new Request(`http://localhost/api/whatsapp/media/${mediaId}`), {
     params: Promise.resolve({ mediaId }),
-  })
+  });
+}
+
+function expectNoTransport() {
+  expect(h.getMediaUrl).not.toHaveBeenCalled();
+  expect(h.downloadMedia).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
-  h.user = { id: 'user-1' }
-  h.accountId = 'acc-1'
-  h.downloadContentType = 'image/jpeg'
-  h.metaMimeType = 'image/jpeg'
-  h.rateLimitOk = true
-})
+  vi.clearAllMocks();
+  h.user = { id: 'user-1' };
+  h.accountId = 'account-1';
+  h.rateLimitOk = true;
+  h.authCalls = 0;
+  h.rateLimitCalls = 0;
+  h.tables = [];
+  h.filters = [];
+  vi.stubGlobal('fetch', fetchMock);
+});
 
-describe('GET /api/whatsapp/media/[mediaId]', () => {
-  it('serves an image inline with the hardening headers', async () => {
-    const res = await call()
-    expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toBe('image/jpeg')
-    expect(res.headers.get('content-disposition')).toBe('inline')
-    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
-    expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; sandbox")
-    expect(await res.text()).toBe('abc')
-  })
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
-  it('forces a customer-sent HTML document to download', async () => {
-    h.downloadContentType = 'text/html; charset=utf-8'
-    h.metaMimeType = 'text/html'
-    const res = await call()
-    expect(res.status).toBe(200)
-    expect(res.headers.get('content-disposition')).toBe('attachment')
-    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
-    expect(res.headers.get('content-security-policy')).toBe("default-src 'none'; sandbox")
-  })
+describe('GET /api/whatsapp/media/[mediaId] temporary Evolution gate', () => {
+  it('keeps the media id validation', async () => {
+    const res = await call('');
 
-  it('forces an SVG image to download', async () => {
-    h.downloadContentType = 'image/svg+xml'
-    const res = await call()
-    expect(res.headers.get('content-disposition')).toBe('attachment')
-  })
+    expect(res.status).toBe(400);
+    expect(h.authCalls).toBe(0);
+    expect(h.rateLimitCalls).toBe(0);
+    expect(h.tables).toEqual([]);
+    expectNoTransport();
+  });
 
-  it('names a PDF download after the media id', async () => {
-    h.downloadContentType = 'application/pdf'
-    const res = await call('42')
-    expect(res.headers.get('content-type')).toBe('application/pdf')
-    expect(res.headers.get('content-disposition')).toBe('attachment; filename="42.pdf"')
-  })
+  it('rejects unauthenticated callers before rate limit, account lookup, or transport', async () => {
+    h.user = null;
 
-  it('never lets a shared cache store the response', async () => {
-    const res = await call()
-    const cacheControl = res.headers.get('cache-control') ?? ''
-    expect(cacheControl).toBe('private, max-age=86400')
-    expect(cacheControl).not.toContain('public')
-  })
+    const res = await call();
 
-  it('rejects an unauthenticated caller before touching Meta', async () => {
-    h.user = null
-    const res = await call()
-    expect(res.status).toBe(401)
-  })
+    expect(res.status).toBe(401);
+    expect(h.authCalls).toBe(1);
+    expect(h.rateLimitCalls).toBe(0);
+    expect(h.tables).toEqual([]);
+    expectNoTransport();
+  });
 
-  it('rejects a caller with no linked account', async () => {
-    h.accountId = null
-    const res = await call()
-    expect(res.status).toBe(403)
-  })
-})
+  it('enforces rate limit before account lookup or transport', async () => {
+    h.rateLimitOk = false;
+
+    const res = await call();
+
+    expect(res.status).toBe(429);
+    expect(h.authCalls).toBe(1);
+    expect(h.rateLimitCalls).toBe(1);
+    expect(h.tables).toEqual([]);
+    expectNoTransport();
+  });
+
+  it('requires an account link before returning the temporary unavailable response', async () => {
+    h.accountId = null;
+
+    const res = await call();
+
+    expect(res.status).toBe(403);
+    expect(h.rateLimitCalls).toBe(1);
+    expect(h.tables).toEqual(['profiles']);
+    expect(h.filters).toContainEqual(['profiles', 'user_id', 'user-1']);
+    expectNoTransport();
+  });
+
+  it('returns unavailable without cache after auth, rate limit, and account scope, without reading media config or calling Meta', async () => {
+    const res = await call();
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(h.authCalls).toBe(1);
+    expect(h.rateLimitCalls).toBe(1);
+    expect(h.tables).toEqual(['profiles']);
+    expect(h.filters).toContainEqual(['profiles', 'user_id', 'user-1']);
+    expect(h.filters).not.toContainEqual([
+      'whatsapp_config',
+      'account_id',
+      'account-1',
+    ]);
+    expect(await res.json()).toMatchObject({ error: expect.any(String) });
+    expectNoTransport();
+  });
+
+  it('sanitizes unexpected failures and marks the 500 response no-store', async () => {
+    const privateDetails = 'synthetic-private-error-marker';
+    h.clientError = privateDetails;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await call();
+    const responseBody = await res.text();
+
+    expect(res.status).toBe(500);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(responseBody).not.toContain(privateDetails);
+    expect(errorSpy).toHaveBeenCalledWith('WhatsApp media GET failed');
+    expect(errorSpy.mock.calls.flat().join(' ')).not.toContain(privateDetails);
+    expectNoTransport();
+  });
+});
