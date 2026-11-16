@@ -1,4 +1,10 @@
-import type { EvolutionCredentials, SessionSnapshot, SessionState } from './types'
+import type {
+  EvolutionCredentials,
+  ProviderAcceptance,
+  ProviderText,
+  SessionSnapshot,
+  SessionState,
+} from './types'
 
 const REQUEST_TIMEOUT_MS = 15_000
 const QR_LOCAL_TTL_MS = 20_000
@@ -328,6 +334,127 @@ export async function connectSession(credentials: EvolutionCredentials): Promise
       retryable: false,
       ambiguous: true,
     })
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function validateProviderText(input: ProviderText): string {
+  if (
+    !input ||
+    typeof input.recipient !== 'string' ||
+    !/^\d{8,15}@s\.whatsapp\.net$/.test(input.recipient)
+  ) {
+    throw error('invalid_credentials', 'Evolution text send input is invalid.')
+  }
+  if (typeof input.text !== 'string' || input.text.trim().length === 0) {
+    throw error('invalid_credentials', 'Evolution text send input is invalid.')
+  }
+  if (
+    typeof input.requestId !== 'string' ||
+    input.requestId.trim().length === 0 ||
+    input.requestId.length > 200
+  ) {
+    throw error('invalid_credentials', 'Evolution text send input is invalid.')
+  }
+
+  return input.recipient.slice(0, input.recipient.indexOf('@'))
+}
+
+export async function sendText(
+  credentials: EvolutionCredentials,
+  input: ProviderText,
+): Promise<ProviderAcceptance> {
+  const origin = validateCredentials(credentials)
+  const number = validateProviderText(input)
+  const url = `${origin}/message/sendText/${encodeURIComponent(credentials.instanceId)}`
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: credentials.token,
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ number, text: input.text }),
+      signal: controller.signal,
+      redirect: 'manual',
+    })
+
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+      throw error('redirect_blocked', 'Evolution redirect was blocked.', {
+        httpStatus: response.status,
+        retryable: false,
+        ambiguous: true,
+      })
+    }
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw error('unauthorized', 'Evolution authentication failed.', {
+          httpStatus: response.status,
+          retryable: false,
+          ambiguous: false,
+        })
+      }
+      throw error('http_error', 'Evolution text send was rejected.', {
+        httpStatus: response.status,
+        retryable: false,
+        ambiguous: ![401, 403, 404, 422].includes(response.status),
+      })
+    }
+
+    let body: unknown
+    try {
+      body = await response.json()
+    } catch (cause) {
+      if (timedOut || (cause instanceof Error && cause.name === 'AbortError')) throw cause
+      throw error('invalid_response', 'Evolution text send response is invalid.', {
+        httpStatus: response.status,
+        retryable: false,
+        ambiguous: true,
+      })
+    }
+
+    const key = isRecord(body) && isRecord(body.key) ? body.key : null
+    if (
+      !key ||
+      typeof key.id !== 'string' ||
+      key.id.trim().length === 0 ||
+      key.fromMe !== true ||
+      key.remoteJid !== input.recipient
+    ) {
+      throw error('invalid_response', 'Evolution text send response is invalid.', {
+        httpStatus: response.status,
+        retryable: false,
+        ambiguous: true,
+      })
+    }
+
+    return { externalMessageId: key.id }
+  } catch (cause) {
+    if (cause instanceof EvolutionError) throw cause
+    const aborted = cause instanceof Error && cause.name === 'AbortError'
+    if (timedOut || aborted) {
+      throw error('timeout', 'Evolution text send timed out.', {
+        retryable: false,
+        ambiguous: true,
+      })
+    }
+    throw error('network_error', 'Evolution text send failed.', {
+      retryable: false,
+      ambiguous: true,
+    })
+  } finally {
+    clearTimeout(timeout)
   }
 }
 

@@ -12,3 +12,13 @@ export interface SessionSnapshot {
   qr: { dataUrl: string; expiresAt: string } | null
   checkedAt: string
 }
+
+export interface ProviderAcceptance {
+  externalMessageId: string
+}
+
+export interface ProviderText {
+  recipient: string
+  text: string
+  requestId: string
+}
