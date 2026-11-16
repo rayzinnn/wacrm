@@ -62,6 +62,7 @@ function providerFailure(error: unknown): { code: string; retryable: boolean } {
   if (
     error.code === 'network_error'
     || error.code === 'timeout'
+    || error.httpStatus === 408
     || error.httpStatus === 429
     || (error.httpStatus !== null && error.httpStatus >= 500)
   ) {

@@ -152,6 +152,7 @@ describe('runEvolutionEventBatch', () => {
   it.each([
     ['timeout', new EvolutionError('timeout', 'RAW_TIMEOUT_SECRET')],
     ['network error', new EvolutionError('network_error', 'RAW_NETWORK_SECRET')],
+    ['HTTP 408', new EvolutionError('http_error', 'RAW_408_SECRET', { httpStatus: 408 })],
     ['HTTP 429', new EvolutionError('http_error', 'RAW_429_SECRET', { httpStatus: 429 })],
     ['HTTP 503', new EvolutionError('http_error', 'RAW_503_SECRET', { httpStatus: 503 })],
   ])('schedules %s as retryable without exposing provider details', async (_label, providerError) => {
