@@ -42,6 +42,10 @@ Schema T12 já presente:
   `supabase/migrations/20261116185619_t12_claim_evolution_dispatches.sql`:
   lote com `SKIP LOCKED`, limites e lease do contrato, tentativas até cinco e
   token novo.
+- `claim_evolution_automation_dispatches` em
+  `supabase/migrations/20261116213012_t12_claim_evolution_automation_dispatches.sql`:
+  variante aplicada no banco local que reserva/exaure somente roots de
+  automação. Fluxos e IA ficam intactos até terem worker próprio.
 - `evolution_dispatch_steps` e vínculo único inverso em `automation_logs`, em
   `supabase/migrations/20261116190454_t12_dispatch_steps_schema.sql`:
   chave única `(dispatch_id, action_key)`, request id parcial único, send
@@ -69,6 +73,10 @@ Schema T12 já presente:
   cobre tag, campo, negócio e atribuição a agente específico com efeito e
   checkpoint atômicos. Foi aplicada somente no banco local. Waits, cadeia
   `tag_added` e execução do engine continuam ausentes.
+- `automation_pending_executions.evolution_dispatch_step_id`, FK e UNIQUE em
+  `supabase/migrations/20261116213140_t12_automation_pending_dispatch_step_link.sql`:
+  schema aplicado no banco local e testado com rollback. Ainda faltam a RPC de
+  wait e a retomada idempotente.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
@@ -184,21 +192,21 @@ Meta `wamid` como idempotency key.
 
 1. **Integração do ciclo de roots (sem ação externa).** Criar worker local
    separado do apply inbound e rota cron protegida semelhante à existente;
-   reivindicar roots com `claim_evolution_dispatches`, chamar
+   reivindicar roots com `claim_evolution_automation_dispatches`, chamar
    `start_evolution_event_dispatch` e fechar candidatas não elegíveis como
-   `skipped`. Persistir `automation_logs`/`flow_runs` uma vez. **Estado:** RPC
-   de início aplicada/testada no banco local; faltam worker, elegibilidade e
-   separação segura entre os três engines. Claim genérico não deve consumir
-   roots de engine ainda sem execução. Testes SQL de início e concorrência já
+   `skipped`. Persistir `automation_logs` uma vez. **Estado:** RPC de início e
+   claim exclusivo de automações aplicados/testados no banco local; faltam
+   worker e elegibilidade. O claim genérico não deve ser usado pelo worker de
+   automação. Testes SQL de início, concorrência e isolamento de engines já
    passaram.
 2. **Primitivas locais de automação.** Implementar/usar
    `apply_evolution_automation_effect` para tags, contato, deal, assignment e
    waits; worker avalia `condition` sem I/O e termina step com RPC fenced.
    **Estado:** RPC de tag/campo/negócio/atribuição específica aplicada e testada
    no banco local. **Lacunas:** execução do worker, `tag_added`, waits e
-   `automation_pending_executions.evolution_dispatch_step_id`
-   e unique parcial/constraint `automation_pending_executions_evolution_dispatch_step_key`
-   ausentes. **Teste:** rollback-only de tenant/FKs/allowed fields, replay da
+   vínculo/UNIQUE `automation_pending_executions_evolution_dispatch_step_key`
+   já aplicado; falta integrar a RPC de wait. **Teste:** rollback-only de
+   tenant/FKs/allowed fields, replay da
    mesma wait e corrida de step/efeito. Excluir `close_conversation` até extensão
    aprovada; `send_webhook` permanece bloqueado.
 3. **Texto de automação.** Para apenas `send_message`, derivar chave do UUID
@@ -262,8 +270,9 @@ Ausentes no estado atual das migrations, embora descritos em
 `schema-contract.md`: implementação de `wait`/`wait_for_reply` na
 `apply_evolution_automation_effect`, `complete_evolution_flow_transition`,
 `claim_ai_reply_slot_for_dispatch`, `complete_evolution_ai_handoff`;
-colunas/índices Evolution em `flow_run_events`; coluna/unique de step em
-`automation_pending_executions`. Confirmar cada item por migration/teste antes
+colunas/índices Evolution em `flow_run_events`. A coluna/UNIQUE de step em
+`automation_pending_executions` já foi aplicada no banco local. Confirmar cada
+item restante por migration/teste antes
 de qualquer worker integrar o caminho correspondente. `condition` e
 `close_conversation` também precisam de definição de execução; não inferir
 operação SQL de `p_payload`. O contrato atual de root completion não aceita
