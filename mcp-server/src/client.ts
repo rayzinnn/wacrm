@@ -177,13 +177,4 @@ export class WacrmClient {
     return this.list(`/conversations/${encodeURIComponent(id)}/messages`, query);
   }
 
-  // --- Broadcasts ---------------------------------------------------
-
-  sendBroadcast(body: unknown): Promise<{ data: unknown }> {
-    return this.request('POST', '/broadcasts', { body });
-  }
-
-  getBroadcast(id: string): Promise<{ data: unknown }> {
-    return this.request('GET', `/broadcasts/${encodeURIComponent(id)}`);
-  }
 }

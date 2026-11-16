@@ -2,8 +2,8 @@
 // Configuration — read once at startup from the environment.
 //
 // The server needs the URL of a wacrm instance and an API key.
-// Two opt-in flags decide whether write / broadcast tools are
-// registered at all: by default the server is READ-ONLY, so an
+// An opt-in flag decides whether write tools are registered at all:
+// by default the server is READ-ONLY, so an
 // MCP client can never see a tool that mutates data or sends a
 // message unless the operator turns it on deliberately. The API
 // key's own scopes are still enforced server-side on top of this —
@@ -14,7 +14,6 @@ export interface Config {
   baseUrl: string;
   apiKey: string;
   enableWrites: boolean;
-  enableBroadcasts: boolean;
 }
 
 function truthy(value: string | undefined): boolean {
@@ -47,18 +46,10 @@ export function loadConfig(): Config {
   }
 
   const enableWrites = truthy(process.env.WACRM_ENABLE_WRITES);
-  const enableBroadcasts = truthy(process.env.WACRM_ENABLE_BROADCASTS);
-
-  if (enableBroadcasts && !enableWrites) {
-    throw new Error(
-      'WACRM_ENABLE_BROADCASTS requires WACRM_ENABLE_WRITES to also be set.',
-    );
-  }
 
   return {
     baseUrl,
     apiKey: apiKey!,
     enableWrites,
-    enableBroadcasts,
   };
 }

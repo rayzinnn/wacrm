@@ -1,8 +1,8 @@
 // ============================================================
 // Read-only tools — always registered.
 //
-// whoami + list/read of contacts, conversations, messages, and
-// broadcast status. None of these change state, so they're safe to
+// whoami + list/read of contacts, conversations, and messages. None
+// of these change state, so they're safe to
 // expose unconditionally. Each carries readOnlyHint so clients can
 // surface them without a confirmation prompt.
 // ============================================================
@@ -111,17 +111,4 @@ export function registerReadTools(server: McpServer, client: WacrmClient): void 
     ),
   );
 
-  server.registerTool(
-    'get_broadcast',
-    {
-      title: 'Get broadcast status',
-      description:
-        'Read a broadcast campaign by id — its status, total recipients, and sent / delivered / read / replied / failed counts. Use this to poll progress after launching one.',
-      inputSchema: {
-        id: z.string().describe('Broadcast id.'),
-      },
-      annotations: { ...READ_ONLY, title: 'Get broadcast status' },
-    },
-    handle(async ({ id }) => jsonResult(await client.getBroadcast(id))),
-  );
 }

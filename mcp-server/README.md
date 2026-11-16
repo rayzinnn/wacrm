@@ -21,15 +21,14 @@ wacrm instance — this server just exposes the API as MCP tools.
 
 ## Install & configure
 
-The server reads two required environment variables and two optional
-write guards:
+The server reads two required environment variables and one optional
+write guard:
 
-| Variable                  | Required | Purpose                                                        |
-| ------------------------- | -------- | -------------------------------------------------------------- |
-| `WACRM_BASE_URL`          | yes      | Your instance URL, e.g. `https://crm.example.com`              |
-| `WACRM_API_KEY`           | yes      | An API key from the dashboard                                  |
-| `WACRM_ENABLE_WRITES`     | no       | `true` to expose contact writes + message sending             |
-| `WACRM_ENABLE_BROADCASTS` | no       | `true` to expose mass broadcasts (needs `WACRM_ENABLE_WRITES`) |
+| Variable              | Required | Purpose                                           |
+| --------------------- | -------- | ------------------------------------------------- |
+| `WACRM_BASE_URL`      | yes      | Your instance URL, e.g. `https://crm.example.com` |
+| `WACRM_API_KEY`       | yes      | An API key from the dashboard                     |
+| `WACRM_ENABLE_WRITES` | no       | `true` to expose contact writes + text messaging  |
 
 ### Claude Desktop / Claude Code / Cursor
 
@@ -58,38 +57,34 @@ assistant change data or send messages, add the write guards:
 "env": {
   "WACRM_BASE_URL": "https://crm.example.com",
   "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx",
-  "WACRM_ENABLE_WRITES": "true",
-  "WACRM_ENABLE_BROADCASTS": "true"
+  "WACRM_ENABLE_WRITES": "true"
 }
 ```
 
 ## Tools
 
-Read tools are always available. Write and broadcast tools appear only
-when their guard is set.
+Read tools are always available. Contact writes and text messaging
+appear only when the write guard is set.
 
-| Tool                 | Group     | Scope needed         | What it does                                    |
-| -------------------- | --------- | -------------------- | ----------------------------------------------- |
-| `whoami`             | read      | _(any valid key)_    | Show the account + scopes the key carries       |
-| `list_contacts`      | read      | `contacts:read`      | List/search contacts (paginated)                |
-| `get_contact`        | read      | `contacts:read`      | Read one contact                                |
-| `list_conversations` | read      | `conversations:read` | List conversations, filter by status/contact    |
-| `get_conversation`   | read      | `conversations:read` | Read one conversation                           |
-| `list_messages`      | read      | `messages:read`      | List a conversation's messages                  |
-| `get_broadcast`      | read      | `broadcasts:send`    | Poll a broadcast's delivery status              |
-| `send_message`       | write     | `messages:send`      | Send text only with caller-supplied `idempotency_key` |
-| `create_contact`     | write     | `contacts:write`     | Create (find-or-create) a contact               |
-| `update_contact`     | write     | `contacts:write`     | Update a contact / replace its tags             |
-| `send_broadcast`     | broadcast | `broadcasts:send`    | Launch a template broadcast (requires `confirm`)|
+| Tool                 | Group | Scope needed         | What it does                                           |
+| -------------------- | ----- | -------------------- | ------------------------------------------------------ |
+| `whoami`             | read  | _(any valid key)_    | Show the account + scopes the key carries              |
+| `list_contacts`      | read  | `contacts:read`      | List/search contacts (paginated)                       |
+| `get_contact`        | read  | `contacts:read`      | Read one contact                                       |
+| `list_conversations` | read  | `conversations:read` | List conversations, filter by status/contact           |
+| `get_conversation`   | read  | `conversations:read` | Read one conversation                                  |
+| `list_messages`      | read  | `messages:read`      | List a conversation's messages                         |
+| `send_message`       | write | `messages:send`      | Send text only with caller-supplied `idempotency_key`  |
+| `create_contact`     | write | `contacts:write`     | Create (find-or-create) a contact                      |
+| `update_contact`     | write | `contacts:write`     | Update a contact / replace its tags                    |
 
 ## Safety model
 
 Sending WhatsApp messages through an LLM is a real-world side effect, so
 the server layers three guards:
 
-1. **Read-only by default.** Write and broadcast tools are not even
-   registered — the model can't see them — unless you opt in via
-   `WACRM_ENABLE_WRITES` / `WACRM_ENABLE_BROADCASTS`.
+1. **Read-only by default.** Write tools are not even registered — the
+   model can't see them — unless you opt in via `WACRM_ENABLE_WRITES`.
 2. **API-key scopes.** Whatever the guards allow, your wacrm instance
    still enforces the key's scopes. A call without the right scope
    returns a clean `forbidden` error. Issue a read-only key for a
@@ -98,9 +93,6 @@ the server layers three guards:
    an `idempotency_key`. Reuse the exact key when retrying the same action
    after an uncertain outcome; the MCP client never creates or rotates it.
    Template, media, and reply fields are not exposed by this tool.
-4. **Explicit broadcast confirmation.** `send_broadcast` refuses to run
-   unless called with `confirm: true`, and is marked `destructive` so
-   compliant clients prompt the user first.
 
 ## Development
 
