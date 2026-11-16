@@ -106,6 +106,18 @@ describe('resolveMedia', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('rejects an allowlisted external hostname until its connection can be pinned', async () => {
+    vi.stubEnv('EVOLUTION_ALLOWED_ORIGINS', 'https://evolution.example')
+
+    const error = await mediaError(resolveMedia(
+      { ...credentials, baseUrl: 'https://evolution.example' },
+      mediaRef,
+    ))
+
+    expect(error.code).toBe('origin_not_allowed')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('rejects credentials with path, query, or fragment before calling fetch', async () => {
     const error = await mediaError(resolveMedia(
       { ...credentials, baseUrl: 'http://127.0.0.1:8080/path?query=1' },

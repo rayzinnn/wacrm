@@ -382,6 +382,10 @@ export async function resolveMedia(
 ): Promise<ResolvedEvolutionMedia> {
   const key = validateMediaRef(mediaRef).key
   const { origin, instance } = validateCredentials(credentials)
+  // Until the transport pins external DNS results, media downloads are local-dev only.
+  // The origin validator admits this one literal loopback endpoint; hostnames are rejected here.
+  if (origin !== 'http://127.0.0.1:8080') fail('origin_not_allowed')
+
   const url = `${origin}/chat/getBase64FromMediaMessage/${instance}`
   const controller = new AbortController()
   let timedOut = false
