@@ -11,6 +11,29 @@ export class EventQueueError extends Error {
   }
 }
 
+function projectNormalizedEvent(event: NormalizedEvent): Record<string, unknown> {
+  if (event.kind === 'connection') {
+    return {
+      kind: 'connection',
+      eventKey: event.eventKey,
+      occurredAt: event.occurredAt,
+    }
+  }
+
+  return {
+    kind: 'message',
+    eventKey: event.eventKey,
+    externalMessageId: event.externalMessageId,
+    peer: event.peer,
+    occurredAt: event.occurredAt,
+    fromMe: event.fromMe,
+    sentByApi: event.sentByApi,
+    contentType: event.contentType,
+    text: event.text,
+    mediaRef: event.mediaRef,
+  }
+}
+
 export async function enqueueEvents(
   connectionId: string,
   events: NormalizedEvent[],
@@ -25,11 +48,7 @@ export async function enqueueEvents(
   const rows = [...uniqueEvents.values()].map((event) => ({
     connection_id: connectionId,
     event_key: event.eventKey,
-    normalized_event: {
-      kind: event.kind,
-      eventKey: event.eventKey,
-      occurredAt: event.occurredAt,
-    },
+    normalized_event: projectNormalizedEvent(event),
   }))
 
   try {

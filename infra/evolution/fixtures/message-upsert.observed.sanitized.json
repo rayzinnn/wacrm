@@ -19,7 +19,7 @@
     }
   },
   "receivedAt": "2026-11-16T16:53:58.891Z",
-  "expected": {
+  "observed": {
     "event": "messages.upsert",
     "sequence": 2,
     "keyId": "[MESSAGE_ID_2]",
@@ -45,5 +45,19 @@
     "messageTimestampAfterPostStart": true,
     "receivedAtDeltaMilliseconds": 891,
     "classifiedAsReplyToTest": false
-  }
+  },
+  "expected": [
+    {
+      "kind": "message",
+      "eventKey": "message:sha256:9b44b0ec439c2baf87ccb6711fa7419fdcd17c1f78f0498452b858fe9d82a870",
+      "externalMessageId": "[MESSAGE_ID_2]",
+      "peer": "[TEST_PEER]@s.whatsapp.net",
+      "occurredAt": "2026-11-16T16:53:58.000Z",
+      "fromMe": false,
+      "sentByApi": false,
+      "contentType": "text",
+      "text": "[REDACTED_INBOUND_TEXT]",
+      "mediaRef": null
+    }
+  ]
 }

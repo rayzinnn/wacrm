@@ -1,10 +1,25 @@
 import { createHash } from 'node:crypto'
 
-export type NormalizedEvent = {
+export type NormalizedConnectionEvent = {
   kind: 'connection'
   eventKey: string
   occurredAt: string
 }
+
+export type NormalizedMessageEvent = {
+  kind: 'message'
+  eventKey: string
+  externalMessageId: string
+  peer: string
+  occurredAt: string
+  fromMe: false
+  sentByApi: false
+  contentType: 'text'
+  text: string
+  mediaRef: null
+}
+
+export type NormalizedEvent = NormalizedConnectionEvent | NormalizedMessageEvent
 
 export class NormalizationError extends Error {
   constructor() {
@@ -27,13 +42,7 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export function normalizeWebhook(payload: unknown, receivedAt: string): NormalizedEvent[] {
-  if (!isReceiverTimestamp(receivedAt) || !isRecord(payload) || typeof payload.event !== 'string') {
-    throw new NormalizationError()
-  }
-
-  if (payload.event !== 'connection.update') return []
-
+function normalizeConnection(payload: Record<string, unknown>, receivedAt: string): NormalizedConnectionEvent[] {
   if (
     !nonEmptyString(payload.instance)
     || !isRecord(payload.data)
@@ -58,4 +67,69 @@ export function normalizeWebhook(payload: unknown, receivedAt: string): Normaliz
     eventKey: `sha256:${digest}`,
     occurredAt: receivedAt,
   }]
+}
+
+function messageTimestampToIso(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new NormalizationError()
+  }
+
+  const date = new Date(value * 1000)
+  if (!Number.isFinite(date.valueOf())) throw new NormalizationError()
+
+  try {
+    return date.toISOString()
+  } catch {
+    throw new NormalizationError()
+  }
+}
+
+function normalizeInboundText(payload: Record<string, unknown>): NormalizedMessageEvent[] {
+  if (!nonEmptyString(payload.instance) || !isRecord(payload.data)) throw new NormalizationError()
+
+  const data = payload.data
+  if (!isRecord(data.key) || !isRecord(data.message)) throw new NormalizationError()
+  if (
+    !nonEmptyString(data.key.id)
+    || typeof data.key.remoteJid !== 'string'
+    || !nonEmptyString(data.key.remoteJid)
+    || typeof data.key.fromMe !== 'boolean'
+    || typeof data.messageType !== 'string'
+  ) {
+    throw new NormalizationError()
+  }
+
+  const occurredAt = messageTimestampToIso(data.messageTimestamp)
+
+  if (data.messageType !== 'conversation' || data.key.fromMe) return []
+  if (!/^\d{8,15}@s\.whatsapp\.net$/.test(data.key.remoteJid)) return []
+  if (!nonEmptyString(data.message.conversation)) throw new NormalizationError()
+
+  const externalMessageId = data.key.id
+  const eventKey = createHash('sha256')
+    .update(JSON.stringify([externalMessageId]))
+    .digest('hex')
+
+  return [{
+    kind: 'message',
+    eventKey: `message:sha256:${eventKey}`,
+    externalMessageId,
+    peer: data.key.remoteJid,
+    occurredAt,
+    fromMe: false,
+    sentByApi: false,
+    contentType: 'text',
+    text: data.message.conversation,
+    mediaRef: null,
+  }]
+}
+
+export function normalizeWebhook(payload: unknown, receivedAt: string): NormalizedEvent[] {
+  if (!isReceiverTimestamp(receivedAt) || !isRecord(payload) || typeof payload.event !== 'string') {
+    throw new NormalizationError()
+  }
+
+  if (payload.event === 'connection.update') return normalizeConnection(payload, receivedAt)
+  if (payload.event === 'messages.upsert') return normalizeInboundText(payload)
+  return []
 }

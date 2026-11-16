@@ -34,6 +34,18 @@ const PAYLOAD = {
 }
 const CONTEXT = { connectionId: CONNECTION_ID, accountId: ACCOUNT_ID, instanceId: INSTANCE_ID }
 const EVENTS = [{ kind: 'connection', eventKey: 'synthetic-event-key', occurredAt: '2026-11-16T00:00:00.000Z' }]
+const MESSAGE_EVENTS = [{
+  kind: 'message',
+  eventKey: 'message:sha256:synthetic-message-key',
+  externalMessageId: '[SYNTHETIC_MESSAGE_ID]',
+  peer: '5521999990000@s.whatsapp.net',
+  occurredAt: '2026-11-16T00:00:01.000Z',
+  fromMe: false,
+  sentByApi: false,
+  contentType: 'text',
+  text: 'synthetic inbound text',
+  mediaRef: null,
+}]
 const URL = 'http://localhost/api/whatsapp/evolution/webhook'
 
 describe('Evolution public webhook receiver', () => {
@@ -180,6 +192,29 @@ describe('Evolution public webhook receiver', () => {
     await expectNoStore(response)
     expect(mocks.authenticateWebhook).toHaveBeenCalledOnce()
     expect(mocks.enqueueEvents).not.toHaveBeenCalled()
+  })
+
+  it('ignores normalized inbound messages until the message worker is enabled', async () => {
+    mocks.normalizeWebhook.mockReturnValueOnce(MESSAGE_EVENTS as never)
+
+    const response = await route.POST(request(JSON.stringify(PAYLOAD)))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ inserted: 0, duplicates: 0, ignored: true })
+    await expectNoStore(response)
+    expect(mocks.enqueueEvents).not.toHaveBeenCalled()
+  })
+
+  it('enqueues only connection events when normalization returns mixed variants', async () => {
+    mocks.normalizeWebhook.mockReturnValueOnce([...EVENTS, ...MESSAGE_EVENTS] as never)
+
+    const response = await route.POST(request(JSON.stringify(PAYLOAD)))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ inserted: 1, duplicates: 0, ignored: false })
+    expect(mocks.enqueueEvents).toHaveBeenCalledOnce()
+    expect(mocks.enqueueEvents).toHaveBeenCalledWith(CONTEXT.connectionId, EVENTS)
+    await expectNoStore(response)
   })
 
   it('does not acknowledge a known event until durable enqueue resolves', async () => {

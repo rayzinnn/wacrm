@@ -24,6 +24,19 @@ const secondEvent: NormalizedEvent = {
   occurredAt: '2026-11-16T04:55:13.556Z',
 }
 
+const inboundMessage: NormalizedEvent = {
+  kind: 'message',
+  eventKey: 'message:sha256:message-1',
+  externalMessageId: '[MESSAGE_ID_2]',
+  peer: '5521999990000@s.whatsapp.net',
+  occurredAt: '2026-11-16T16:53:58.000Z',
+  fromMe: false,
+  sentByApi: false,
+  contentType: 'text',
+  text: 'synthetic inbound text',
+  mediaRef: null,
+}
+
 function configureAdmin(data: Array<{ id: string }> | null, error: unknown = null) {
   const select = vi.fn().mockResolvedValue({ data, error })
   const upsert = vi.fn().mockReturnValue({ select })
@@ -141,6 +154,62 @@ describe('enqueueEvents', () => {
     ])
     expect(JSON.stringify(query.upsert.mock.calls[0][0])).not.toContain('secret-must-not-persist')
     expect(JSON.stringify(query.upsert.mock.calls[0][0])).not.toContain('raw-body-secret')
+  })
+
+  it('projects message fields explicitly and removes raw context and secrets', async () => {
+    const query = configureAdmin([{ id: 'event-message-1' }])
+    const eventWithExtras = {
+      ...inboundMessage,
+      apikey: 'private-api-key-marker',
+      payload: { contextInfo: { messageSecret: 'private-message-secret-marker' } },
+      messageContextInfo: { deviceListMetadata: 'private-device-metadata-marker' },
+    } as NormalizedEvent
+
+    await enqueueEvents(connectionId, [eventWithExtras])
+
+    const rows = query.upsert.mock.calls[0][0]
+    expect(rows).toEqual([{
+      connection_id: connectionId,
+      event_key: 'message:sha256:message-1',
+      normalized_event: {
+        kind: 'message',
+        eventKey: 'message:sha256:message-1',
+        externalMessageId: '[MESSAGE_ID_2]',
+        peer: '5521999990000@s.whatsapp.net',
+        occurredAt: '2026-11-16T16:53:58.000Z',
+        fromMe: false,
+        sentByApi: false,
+        contentType: 'text',
+        text: 'synthetic inbound text',
+        mediaRef: null,
+      },
+    }])
+    const stored = JSON.stringify(rows)
+    expect(stored).not.toContain('private-api-key-marker')
+    expect(stored).not.toContain('private-message-secret-marker')
+    expect(stored).not.toContain('private-device-metadata-marker')
+    expect(stored).not.toContain('contextInfo')
+  })
+
+  it('deduplicates inbound message replay by event key and keeps the first projection', async () => {
+    const query = configureAdmin([{ id: 'event-message-1' }])
+    const replay: NormalizedEvent = {
+      ...inboundMessage,
+      text: 'different text on replay',
+      occurredAt: '2026-11-16T16:54:10.000Z',
+    }
+
+    await expect(enqueueEvents(connectionId, [inboundMessage, replay])).resolves.toEqual({
+      inserted: 1,
+      duplicates: 1,
+    })
+
+    expect(query.upsert).toHaveBeenCalledTimes(1)
+    expect(query.upsert.mock.calls[0][0][0].normalized_event).toMatchObject({
+      eventKey: 'message:sha256:message-1',
+      text: 'synthetic inbound text',
+      occurredAt: '2026-11-16T16:53:58.000Z',
+    })
   })
 
   it('sanitizes returned database errors', async () => {
