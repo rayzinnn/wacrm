@@ -62,6 +62,7 @@ import {
   contactSearchPattern,
 } from '@/lib/contacts/search-filter';
 import { pageAfterRangeError, pageAfterShrink } from '@/lib/contacts/page-bounds';
+import './contacts.css';
 
 const PAGE_SIZE = 25;
 
@@ -359,16 +360,16 @@ export default function ContactsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <section className="contacts-page space-y-6" aria-labelledby="contacts-page-title">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="contacts-page-header flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+          <h1 id="contacts-page-title" className="text-3xl font-semibold tracking-tight text-foreground">{t('title')}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {totalCount > 0 ? t('subtitle', { count: totalCount }) : t('subtitleZero')}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="contacts-page-actions flex flex-wrap items-center gap-2">
           {canEditSettings && (
             <Button
               variant="outline"
@@ -402,9 +403,9 @@ export default function ContactsPage() {
       </div>
 
       {/* Search + tag filter */}
-      <div className="space-y-2">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="relative w-full max-w-sm">
+      <section className="contacts-command-surface space-y-3" aria-label={t('title')}>
+        <div className="contacts-command-row flex flex-col sm:flex-row gap-2">
+          <div className="contacts-search-field relative w-full">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               value={search}
@@ -415,7 +416,8 @@ export default function ContactsPage() {
                 setPage(0);
               }}
               placeholder={t('searchPlaceholder')}
-              className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
+              aria-label={t('searchPlaceholder')}
+              className="pl-8 bg-transparent border-0 text-foreground placeholder:text-muted-foreground shadow-none focus-visible:ring-0"
             />
           </div>
 
@@ -424,7 +426,7 @@ export default function ContactsPage() {
               render={
                 <Button
                   variant="outline"
-                  className="border-border text-muted-foreground hover:bg-muted shrink-0"
+                  className="contacts-filter-trigger border-border text-muted-foreground hover:bg-muted shrink-0"
                 />
               }
             >
@@ -515,11 +517,11 @@ export default function ContactsPage() {
             </button>
           </div>
         )}
-      </div>
+      </section>
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/40 px-4 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary-soft px-4 py-3">
           <p className="text-sm text-foreground">
             {t('selectedCount', { count: selected.size })}
           </p>
@@ -547,10 +549,10 @@ export default function ContactsPage() {
       )}
 
       {/* Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="contacts-table-shell rounded-xl border border-border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="border-border hover:bg-transparent">
+            <TableRow className="contacts-table-head border-border hover:bg-transparent">
               <TableHead className="w-10">
                 <Checkbox
                   checked={allOnPageSelected}
@@ -609,8 +611,16 @@ export default function ContactsPage() {
               contacts.map((contact) => (
                 <TableRow
                   key={contact.id}
-                  className="border-border hover:bg-muted/50 cursor-pointer"
+                  className="contacts-table-row border-border hover:bg-muted/50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  tabIndex={0}
                   onClick={() => openDetail(contact.id)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      openDetail(contact.id);
+                    }
+                  }}
                 >
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -846,6 +856,6 @@ export default function ContactsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
   );
 }

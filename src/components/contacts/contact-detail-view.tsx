@@ -394,7 +394,7 @@ export function ContactDetailView({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
+        className="contact-detail-sheet bg-popover border-border text-popover-foreground w-full p-0"
       >
         {loading || !contact ? (
           <div className="flex items-center justify-center h-full">
@@ -403,7 +403,7 @@ export function ContactDetailView({
         ) : (
           <div className="flex flex-col h-full">
             {/* Header */}
-            <SheetHeader className="p-4 border-b border-border/50">
+            <SheetHeader className="contact-detail-header">
               <div className="flex items-center gap-3">
                 <Avatar className="size-12 bg-muted border border-border">
                   <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
@@ -420,6 +420,7 @@ export function ContactDetailView({
                   <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                     <button
                       onClick={copyPhone}
+                      aria-label={t('phone')}
                       className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                     >
                       <Phone className="size-3" />
@@ -464,7 +465,7 @@ export function ContactDetailView({
 
             {/* Tabs */}
             <Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-              <TabsList className="bg-muted/50 border-b border-border mx-4 mt-3">
+              <TabsList className="contact-detail-tabs">
                 <TabsTrigger
                   value="details"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
@@ -498,37 +499,41 @@ export function ContactDetailView({
               </TabsList>
 
               {/* Details Tab */}
-              <TabsContent value="details" className="flex-1 overflow-y-auto px-4 py-3">
+              <TabsContent value="details" className="contact-detail-panel flex-1 overflow-y-auto">
                 <div className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('name')}</Label>
+                    <Label htmlFor="contact-detail-name" className="text-muted-foreground text-xs">{t('name')}</Label>
                     <Input
+                      id="contact-detail-name"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">
+                    <Label htmlFor="contact-detail-phone" className="text-muted-foreground text-xs">
                       {t('phone')} <span className="text-red-400">*</span>
                     </Label>
                     <Input
+                      id="contact-detail-phone"
                       value={editPhone}
                       onChange={(e) => setEditPhone(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('email')}</Label>
+                    <Label htmlFor="contact-detail-email" className="text-muted-foreground text-xs">{t('email')}</Label>
                     <Input
+                      id="contact-detail-email"
                       value={editEmail}
                       onChange={(e) => setEditEmail(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">{t('company')}</Label>
+                    <Label htmlFor="contact-detail-company" className="text-muted-foreground text-xs">{t('company')}</Label>
                     <Input
+                      id="contact-detail-company"
                       value={editCompany}
                       onChange={(e) => setEditCompany(e.target.value)}
                       className="bg-muted border-border text-foreground h-8 text-sm"
@@ -551,7 +556,7 @@ export function ContactDetailView({
               </TabsContent>
 
               {/* Tags Tab */}
-              <TabsContent value="tags" className="flex-1 overflow-y-auto px-4 py-3">
+              <TabsContent value="tags" className="contact-detail-panel flex-1 overflow-y-auto">
                 <div className="space-y-3">
                   <p className="text-xs text-muted-foreground">
                     {t('tagsTab.clickTagDesc')}
@@ -590,7 +595,7 @@ export function ContactDetailView({
               </TabsContent>
 
               {/* Notes Tab */}
-              <TabsContent value="notes" className="flex-1 flex flex-col min-h-0 px-4 py-3">
+              <TabsContent value="notes" className="contact-detail-panel flex-1 flex flex-col min-h-0">
                 <div className="space-y-2 mb-3">
                   <Textarea
                     value={newNote}
@@ -634,7 +639,8 @@ export function ContactDetailView({
                           </p>
                           <button
                             onClick={() => deleteNote(note.id)}
-                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all cursor-pointer shrink-0"
+                            aria-label={t('actions.delete')}
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-red-400 transition-opacity cursor-pointer shrink-0"
                           >
                             <Trash2 className="size-3.5" />
                           </button>
@@ -655,7 +661,7 @@ export function ContactDetailView({
               </TabsContent>
 
               {/* Custom Fields Tab */}
-              <TabsContent value="custom" className="flex-1 overflow-y-auto px-4 py-3">
+              <TabsContent value="custom" className="contact-detail-panel flex-1 overflow-y-auto">
                 {loadingCustom ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -668,10 +674,11 @@ export function ContactDetailView({
                   <div className="space-y-3">
                     {customFields.map((field) => (
                       <div key={field.id} className="space-y-1.5">
-                        <Label className="text-muted-foreground text-xs capitalize">
+                        <Label htmlFor={`contact-custom-${field.id}`} className="text-muted-foreground text-xs capitalize">
                           {field.field_name}
                         </Label>
                         <Input
+                          id={`contact-custom-${field.id}`}
                           value={customValues[field.id] ?? ''}
                           onChange={(e) =>
                             setCustomValues((prev) => ({
@@ -702,7 +709,7 @@ export function ContactDetailView({
               </TabsContent>
 
               {/* Deals Tab */}
-              <TabsContent value="deals" className="flex-1 overflow-y-auto px-4 py-3">
+              <TabsContent value="deals" className="contact-detail-panel flex-1 overflow-y-auto">
                 {loadingDeals ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="size-5 animate-spin text-primary" />
