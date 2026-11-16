@@ -1,193 +1,89 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({
-  templateRows: [] as unknown[],
-  insertedMessage: null as Record<string, unknown> | null,
-}))
+const transports = vi.hoisted(() => ({
+  sendText: vi.fn(),
+  sendTemplate: vi.fn(),
+  sendInteractiveButtons: vi.fn(),
+  sendInteractiveList: vi.fn(),
+  supabaseAdmin: vi.fn(),
+}));
 
-vi.mock('@/lib/whatsapp/encryption', () => ({
-  decrypt: (v: string) => v,
-}))
+vi.mock('@/lib/whatsapp/meta-api', () => ({
+  sendTextMessage: transports.sendText,
+  sendTemplateMessage: transports.sendTemplate,
+}));
+
+vi.mock('@/lib/flows/meta-send', () => ({
+  engineSendInteractiveButtons: transports.sendInteractiveButtons,
+  engineSendInteractiveList: transports.sendInteractiveList,
+}));
 
 vi.mock('./admin-client', () => ({
-  supabaseAdmin: () => ({
-    from(table: string) {
-      const builder: Record<string, unknown> = {
-        select: () => builder,
-        eq: () => builder,
-        update: () => builder,
-        insert: (row: Record<string, unknown>) => {
-          if (table === 'messages') state.insertedMessage = row
-          return builder
-        },
-        maybeSingle: async () => {
-          if (table === 'contacts') {
-            return { data: { id: 'ct-1', phone: '15551234567', wa_user_id: null }, error: null }
-          }
-          if (table === 'conversations') return { data: { id: 'cv-1' }, error: null }
-          return { data: null, error: null }
-        },
-        single: async () => {
-          if (table === 'whatsapp_config') {
-            return { data: { phone_number_id: 'pn-1', access_token: 'token' }, error: null }
-          }
-          return { data: null, error: null }
-        },
-        then: (resolve: (r: { data: unknown; error: null }) => unknown) =>
-          resolve({
-            data: table === 'message_templates' ? state.templateRows : null,
-            error: null,
-          }),
-      }
-      return builder
-    },
-  }),
-}))
+  supabaseAdmin: transports.supabaseAdmin,
+}));
 
-import { engineSendTemplate } from './meta-send'
+import {
+  AUTOMATION_SEND_CAPABILITY_ERROR,
+  engineSendInteractive,
+  engineSendTemplate,
+  engineSendText,
+} from './meta-send';
 
-type FetchResult = { ok: boolean; json: () => Promise<unknown> }
-
-const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<FetchResult>>(
-  async () => ({
-    ok: true,
-    json: async () => ({ messages: [{ id: 'wamid.auto' }] }),
-  }),
-)
-
-function sentTemplate(): Record<string, unknown> {
-  expect(fetchMock).toHaveBeenCalledTimes(1)
-  const init = fetchMock.mock.calls[0][1]
-  return JSON.parse(String(init?.body)).template
-}
-
-const BASE_ROW = {
-  id: 'tpl-1',
-  user_id: 'u-1',
-  name: 'order_update',
-  category: 'Utility',
-  language: 'en_US',
-  body_text: 'Your order {{1}} ships on {{2}}',
-  created_at: '2026-01-01T00:00:00Z',
-}
-
-const SEND_ARGS = {
+const sendArgs = {
   accountId: 'acct-1',
-  userId: 'u-1',
-  conversationId: 'cv-1',
-  contactId: 'ct-1',
-  templateName: 'order_update',
-  language: 'en_US',
-  params: ['A123', 'Friday'],
-}
+  userId: 'user-1',
+  conversationId: 'conversation-1',
+  contactId: 'contact-1',
+};
 
-const BODY_COMPONENT = {
-  type: 'body',
-  parameters: [
-    { type: 'text', text: 'A123' },
-    { type: 'text', text: 'Friday' },
-  ],
-}
+const scenarios = [
+  {
+    name: 'text',
+    run: () => engineSendText({ ...sendArgs, text: 'Fixture text' }),
+  },
+  {
+    name: 'template',
+    run: () =>
+      engineSendTemplate({ ...sendArgs, templateName: 'fixture_template' }),
+  },
+  {
+    name: 'interactive',
+    run: () =>
+      engineSendInteractive({
+        ...sendArgs,
+        payload: {
+          kind: 'buttons',
+          body: 'Fixture body',
+          buttons: [{ id: 'choice', title: 'Continue' }],
+        },
+      }),
+  },
+] as const;
 
 beforeEach(() => {
-  state.templateRows = []
-  state.insertedMessage = null
-  vi.stubGlobal('fetch', fetchMock)
-})
+  vi.clearAllMocks();
+  vi.stubGlobal('fetch', vi.fn());
+});
 
 afterEach(() => {
-  vi.unstubAllGlobals()
-})
+  vi.unstubAllGlobals();
+});
 
-describe('engineSendTemplate — header component', () => {
-  it.each(['image', 'video', 'document'] as const)(
-    'sends the stored %s header as a header parameter',
-    async (headerType) => {
-      state.templateRows = [
-        {
-          ...BASE_ROW,
-          header_type: headerType,
-          header_media_url: `https://cdn.example.com/header.${headerType}`,
-        },
-      ]
+describe('automation send capability gate', () => {
+  it.each(scenarios)(
+    'fails closed for $name before any persistence or transport',
+    async ({ run }) => {
+      await expect(run()).rejects.toMatchObject({
+        name: 'AutomationSendCapabilityError',
+        message: AUTOMATION_SEND_CAPABILITY_ERROR,
+      });
 
-      await engineSendTemplate(SEND_ARGS)
-
-      expect(sentTemplate()).toEqual({
-        name: 'order_update',
-        language: { code: 'en_US' },
-        components: [
-          {
-            type: 'header',
-            parameters: [
-              {
-                type: headerType,
-                [headerType]: { link: `https://cdn.example.com/header.${headerType}` },
-              },
-            ],
-          },
-          BODY_COMPONENT,
-        ],
-      })
-      expect(state.insertedMessage?.media_url).toBe(
-        `https://cdn.example.com/header.${headerType}`,
-      )
-    },
-  )
-
-  it('fails before calling Meta when a text header variable has no value', async () => {
-    state.templateRows = [
-      { ...BASE_ROW, header_type: 'text', header_content: 'Hi {{1}}' },
-    ]
-
-    await expect(engineSendTemplate(SEND_ARGS)).rejects.toThrow(
-      /Header text variable \{\{1\}\} requires a value/,
-    )
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('sends no header component for a static text header', async () => {
-    state.templateRows = [
-      { ...BASE_ROW, header_type: 'text', header_content: 'Order update' },
-    ]
-
-    await engineSendTemplate(SEND_ARGS)
-
-    expect(sentTemplate().components).toEqual([BODY_COMPONENT])
-  })
-})
-
-describe('engineSendTemplate — templates without a header keep their payload', () => {
-  it('sends only the body component for a header-less template', async () => {
-    state.templateRows = [BASE_ROW]
-
-    await engineSendTemplate(SEND_ARGS)
-
-    expect(sentTemplate()).toEqual({
-      name: 'order_update',
-      language: { code: 'en_US' },
-      components: [BODY_COMPONENT],
-    })
-  })
-
-  it('sends no components for a fully static template', async () => {
-    state.templateRows = [{ ...BASE_ROW, body_text: 'Thanks for your order' }]
-
-    await engineSendTemplate({ ...SEND_ARGS, params: [] })
-
-    expect(sentTemplate()).toEqual({
-      name: 'order_update',
-      language: { code: 'en_US' },
-    })
-  })
-
-  it('falls back to the body-only payload when the account has no local row', async () => {
-    await engineSendTemplate(SEND_ARGS)
-
-    expect(sentTemplate()).toEqual({
-      name: 'order_update',
-      language: { code: 'en_US' },
-      components: [BODY_COMPONENT],
-    })
-  })
-})
+      expect(transports.supabaseAdmin).not.toHaveBeenCalled();
+      expect(transports.sendText).not.toHaveBeenCalled();
+      expect(transports.sendTemplate).not.toHaveBeenCalled();
+      expect(transports.sendInteractiveButtons).not.toHaveBeenCalled();
+      expect(transports.sendInteractiveList).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    }
+  );
+});
