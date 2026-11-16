@@ -38,7 +38,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MediaLightbox } from "./media-lightbox";
@@ -114,6 +113,8 @@ interface MessageThreadProps {
    * mobile only.
    */
   onBack?: () => void;
+  /** Shows the contact context as a separate pane below wide desktop sizes. */
+  onOpenContact?: () => void;
   /**
    * Increment to force the messages + reactions fetch effects to refire.
    * Parent bumps this on realtime reconnect / tab visibility → visible
@@ -171,18 +172,6 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
   { label: "Closed", value: "closed", color: "text-muted-foreground" },
 ];
 
-/**
- * WhatsApp-style doodle background applied to the chat area (both the
- * active thread and the empty state). The SVG tile lives at
- * `/public/inbox-doodle.svg`; the slate-950 colour sits underneath so
- * the doodles read as a subtle pattern rather than a stark grid.
- *
- * Defined once at module scope so the two render paths can't drift —
- * if we ever switch the asset, both spots update together.
- */
-const DOODLE_BG_CLASSES =
-  "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
-
 export function MessageThread({
   conversation,
   contact,
@@ -194,6 +183,7 @@ export function MessageThread({
   onStatusChange,
   onAssignChange,
   onBack,
+  onOpenContact,
   resyncToken = 0,
   onRefresh,
   contactPanelOpen,
@@ -1063,12 +1053,10 @@ export function MessageThread({
     [conversation, onAssignChange, t],
   );
 
-  // Empty state — same WhatsApp-style doodle background as the active
-  // thread below, so swapping between empty/selected doesn't change the
-  // pattern under the user's eye.
+  // Keep the empty selection state on the same neutral conversation canvas.
   if (!conversation || !contact) {
     return (
-      <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
+      <div className="flex min-w-0 flex-1 flex-col items-center justify-center bg-muted/30 px-6 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
           <MessageSquare className="h-8 w-8 text-muted-foreground" />
         </div>
@@ -1098,14 +1086,13 @@ export function MessageThread({
     // thread's flex *wrapper* (issue #165), but this root keeps the
     // default `min-width: auto`, so a single wide message (long unbroken
     // URL/word) expands the whole thread past its flex share and the chat
-    // paints on top of the contact sidebar at lg+ — outgoing bubbles get
+    // paints on top of the contact sidebar at xl+ — outgoing bubbles get
     // clipped and the hover toolbar overlaps the Tags panel. Letting the
     // root shrink lets the bubbles' break-words / max-w caps apply.
     // Issue #257.
-    <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
-      {/* Header — solid card surface sits on top of the doodle so the
-          name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-muted/30">
+      {/* Header keeps the identity and controls on a distinct surface. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-card px-3 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
@@ -1114,7 +1101,7 @@ export function MessageThread({
               type="button"
               onClick={onBack}
               aria-label={t("backToConversations")}
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
@@ -1142,7 +1129,18 @@ export function MessageThread({
           </Badge>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+          {onOpenContact && (
+            <button
+              type="button"
+              onClick={onOpenContact}
+              aria-label={t("showContactPanel")}
+              title={t("showContact")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:hidden"
+            >
+              <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
           {/* Contact-panel toggle — desktop only. The contact sidebar
               eats a chunk of horizontal width that crowds the thread on
               smaller laptops; this lets agents reclaim it when they just
@@ -1158,7 +1156,7 @@ export function MessageThread({
               title={contactPanelOpen ? t("hideContact") : t("showContact")}
               aria-pressed={contactPanelOpen}
               className={cn(
-                "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:inline-flex",
+                "hidden h-9 w-9 items-center justify-center rounded-lg border border-border bg-card transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xl:inline-flex",
                 contactPanelOpen ? "text-primary" : "text-muted-foreground",
               )}
             >
@@ -1183,7 +1181,7 @@ export function MessageThread({
               aria-label={t("refreshConversation")}
               title={t("refresh")}
               className={cn(
-                "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
+                "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
               )}
             >
               <RefreshCw
@@ -1195,7 +1193,7 @@ export function MessageThread({
           {/* Status dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  "inline-flex min-h-8 items-center justify-center gap-1 rounded-lg border border-border bg-card px-2 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   currentStatus?.color ?? "text-muted-foreground"
                 )}>
                 {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
@@ -1221,7 +1219,7 @@ export function MessageThread({
           <DropdownMenu>
             <DropdownMenuTrigger
               className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                "inline-flex min-h-8 items-center justify-center gap-1 rounded-lg border border-border bg-card px-2 text-xs transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 assignedAgentId ? "text-primary" : "text-muted-foreground"
               )}
             >
@@ -1285,7 +1283,7 @@ export function MessageThread({
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -1391,7 +1389,7 @@ export function MessageThread({
       {pendingTextOperations.map((operation) => (
         <div
           key={operation.requestId}
-          className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+          className="flex items-center justify-between gap-3 rounded-xl border border-status-serious/30 bg-status-serious/10 px-3 py-2.5"
         >
           <p
             id={`text-send-operation-status-${operation.tempMessageId}`}

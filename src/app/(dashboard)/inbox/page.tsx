@@ -14,7 +14,6 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { parseInboxFilter } from "@/lib/inbox/inbox-filters";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
-import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -41,6 +40,7 @@ export default function InboxPage() {
 
 function InboxPageInner() {
   const t = useTranslations("Inbox.page");
+  const tThread = useTranslations("Inbox.messageThread");
   const router = useRouter();
   const searchParams = useSearchParams();
   /**
@@ -55,6 +55,7 @@ function InboxPageInner() {
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [mobileContextOpen, setMobileContextOpen] = useState(false);
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
@@ -425,6 +426,7 @@ function InboxPageInner() {
         if (activeConversation?.id === deepLinkConvId) return;
         const match = loaded.find((c) => c.id === deepLinkConvId);
         if (match) {
+          setMobileContextOpen(false);
           setActiveConversation(match);
           setActiveContact(match.contact ?? null);
           setMessages([]);
@@ -452,6 +454,7 @@ function InboxPageInner() {
       // when conversationId changes — so messages would stay empty until
       // the user navigated away and back. Bail out early instead.
       if (activeConversation?.id === conv.id) return;
+      setMobileContextOpen(false);
       setActiveConversation(conv);
       setActiveContact(conv.contact ?? null);
       setMessages([]);
@@ -491,6 +494,7 @@ function InboxPageInner() {
   // back. Also clears the ?c= param so a refresh lands on the list
   // instead of re-opening the thread the user just backed out of.
   const handleCloseConversation = useCallback(() => {
+    setMobileContextOpen(false);
     setActiveConversation(null);
     setActiveContact(null);
     setMessages([]);
@@ -561,12 +565,15 @@ function InboxPageInner() {
   // On mobile (<lg) we show a SINGLE pane — either the list or the
   // thread — rather than cramming both side-by-side. Selecting a
   // conversation slides the thread in; the thread's back button pops
-  // it back to the list. On lg+ both panes render side-by-side as
+  // it back to the list. At lg+ both panes render side-by-side as
   // before, unchanged.
   const hasActiveConv = !!activeConversation;
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    <div className="-m-4 flex h-[calc(100vh-3.5rem)] min-h-0 min-w-0 flex-col overflow-hidden bg-background sm:-m-6">
+      <h1 className="sr-only">
+        {activeContact?.name || activeContact?.phone || tThread("selectConversation")}
+      </h1>
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (
@@ -578,14 +585,17 @@ function InboxPageInner() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left panel: Conversation list.
-            Hidden on mobile when a conversation is selected so the
-            thread can occupy the full width. Always visible on lg+. */}
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-border/70">
+        {/* Left panel: Conversation list. Hidden on narrow screens after
+            selection and while the context pane is open. */}
         <div
           className={cn(
-            "flex h-full min-w-0 flex-1 lg:flex-none",
-            hasActiveConv ? "hidden lg:flex" : "flex",
+            "flex h-full min-h-0 min-w-0 flex-1 xl:flex-none",
+            hasActiveConv
+              ? mobileContextOpen
+                ? "hidden xl:flex"
+                : "hidden lg:flex"
+              : "flex",
           )}
         >
           <ConversationList
@@ -598,10 +608,9 @@ function InboxPageInner() {
           />
         </div>
 
-        {/* Center panel: Message thread.
-            Hidden on mobile when no conversation is selected so the
-            list can occupy the full width. Always visible on lg+
-            (shows its own empty-state if no thread is picked yet).
+        {/* Center panel: Message thread. Hidden on narrow screens when
+            there is no selection or the contact context is open. Wide
+            layouts keep the empty state visible next to the list.
 
             `min-w-0` is load-bearing: without it, a single wide piece
             of content inside the thread (long quote preview, very
@@ -610,8 +619,12 @@ function InboxPageInner() {
             on the right. Issue #165. */}
         <div
           className={cn(
-            "flex h-full min-w-0 flex-1 lg:flex",
-            hasActiveConv ? "flex" : "hidden lg:flex",
+            "flex h-full min-h-0 min-w-0 flex-1 bg-card",
+            hasActiveConv
+              ? mobileContextOpen
+                ? "hidden xl:flex"
+                : "flex"
+              : "hidden lg:flex",
           )}
         >
           <MessageThread
@@ -625,6 +638,7 @@ function InboxPageInner() {
             onStatusChange={handleStatusChange}
             onAssignChange={handleAssignChange}
             onBack={handleCloseConversation}
+            onOpenContact={() => setMobileContextOpen(true)}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
@@ -632,13 +646,20 @@ function InboxPageInner() {
           />
         </div>
 
-        {/* Right panel: Contact sidebar — desktop only, and only when the
-            agent hasn't collapsed it via the thread-header toggle (#258).
-            On mobile it's always hidden (the `lg:block` below), so the
-            toggle — which is itself desktop-only — never affects it. */}
-        {contactPanelOpen && (
-          <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+        {/* Contact context is a third pane on wide screens and a full pane
+            on smaller screens. Desktop visibility follows the saved toggle. */}
+        {(contactPanelOpen || mobileContextOpen) && (
+          <div
+            className={cn(
+              "h-full min-h-0 min-w-0",
+              mobileContextOpen ? "flex w-full xl:hidden" : "hidden",
+              contactPanelOpen && "xl:flex xl:w-70",
+            )}
+          >
+            <ContactSidebar
+              contact={activeContact}
+              onBack={() => setMobileContextOpen(false)}
+            />
           </div>
         )}
       </div>

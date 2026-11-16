@@ -106,7 +106,7 @@ function MediaActionButton({
 
 function MediaPlaceholder({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
+    <div className="flex h-40 w-60 items-center justify-center rounded-xl border border-border bg-muted">
       {children}
     </div>
   );
@@ -148,7 +148,7 @@ export function MediaImageBubble({
     <img
       src={src}
       alt={t("imageAlt")}
-      className={cn(MEDIA_BOX, "rounded-lg object-contain")}
+      className={cn(MEDIA_BOX, "rounded-xl border border-border object-contain")}
       onError={() => setBroken(true)}
     />
   );
@@ -160,7 +160,7 @@ export function MediaImageBubble({
           type="button"
           onClick={onOpen}
           aria-label={t("viewImage")}
-          className="block cursor-zoom-in rounded-lg outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-ring"
+          className="block cursor-zoom-in rounded-xl outline-none ring-offset-2 ring-offset-transparent focus-visible:ring-2 focus-visible:ring-ring"
         >
           {image}
         </button>
@@ -267,7 +267,7 @@ export function MediaDocumentBubble({
           void download();
         }}
         aria-busy={downloading || undefined}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm transition-colors hover:bg-muted"
       >
         <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
         <span className="truncate">{message.content_text || t("document")}</span>

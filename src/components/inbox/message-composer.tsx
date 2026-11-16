@@ -565,7 +565,7 @@ export function MessageComposer({
   // ---- Render --------------------------------------------------------
 
   return (
-    <div className="border-t border-border bg-card p-3">
+    <div className="shrink-0 border-t border-border bg-card p-3 sm:p-4">
       {replyTo && (
         <div className="mb-2">
           <ReplyQuote
@@ -636,7 +636,7 @@ export function MessageComposer({
         />
       ) : recording ? (
         // Recording bar — replaces the composer while the mic is live.
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-2.5">
+        <div className="flex items-center gap-3 rounded-xl border border-status-serious/30 bg-status-serious/10 px-4 py-2.5">
           <span className="flex h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
           <span className="flex-1 text-sm text-foreground">
             {t("recording", { current: formatDuration(recordSeconds), max: formatDuration(MAX_RECORDING_SECONDS) })}
@@ -779,7 +779,7 @@ export function MessageComposer({
             // The placeholder text also surfaces the read-only state.
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
-              "order-1 min-w-0 flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50 sm:order-2",
+              "order-1 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 sm:order-2",
               (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
             )}
           />
@@ -810,7 +810,7 @@ export function MessageComposer({
         <p
           id="text-send-capability-status"
           role="status"
-          className="mt-1 pl-1 text-xs text-muted-foreground sm:pl-[5.5rem]"
+          className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground sm:ml-[5.5rem] sm:mr-12 sm:pl-3"
         >
           {t("textSendingUnavailable")}
         </p>

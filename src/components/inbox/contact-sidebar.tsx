@@ -3,14 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
 import {
+  ArrowLeft,
   Phone,
   Mail,
   Copy,
   Check,
-  User,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
@@ -24,9 +23,10 @@ import { contactHandle } from "@/lib/whatsapp/wa-identity";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  onBack?: () => void;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, onBack }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -125,7 +125,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   if (!contact) {
     return (
-      <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
+      <div className="flex h-full w-full items-center justify-center bg-card px-6 text-center xl:w-70">
         <p className="text-sm text-muted-foreground">{tThread("selectConversation")}</p>
       </div>
     );
@@ -135,8 +135,21 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="flex h-full w-70 flex-col border-l border-border bg-card">
-      <ScrollArea className="flex-1">
+    <div className="flex h-full min-h-0 w-full flex-col bg-card xl:w-70">
+      {onBack && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-3 xl:hidden">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label={tThread("hideContactPanel")}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <span className="text-sm font-semibold text-foreground">{tSidebar("contactInfo")}</span>
+        </div>
+      )}
+      <ScrollArea className="min-h-0 flex-1">
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
@@ -163,7 +176,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div className="mt-4 space-y-2">
             <button
               onClick={handleCopyPhone}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-border hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Phone className="h-4 w-4 text-muted-foreground" />
               <span className="flex-1 text-left">
@@ -273,7 +286,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                   onChange={(e) => setNewNote(e.target.value)}
                   placeholder={tSidebar("addNotePlaceholder")}
                   rows={2}
-                  className="flex-1 resize-none rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+                  className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground placeholder-muted-foreground outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40"
                 />
                 <Button
                   size="sm"
