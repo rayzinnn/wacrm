@@ -1,6 +1,6 @@
 # Setup local WACRM
 
-Estado em 2026-11-15: T02.a concluído. Infra.b/T02.b (Supabase local e banco) ainda pendente; T02.c (checks e smoke local) não executado.
+Estado em 2026-11-15: T02.a e T02.c-checks concluídos. Infra.b/T02.b (Supabase local e banco) ainda pendente; T02.c smoke/login ainda não executado.
 
 ## Runtime e instalação
 
@@ -24,4 +24,13 @@ Estado em 2026-11-15: T02.a concluído. Infra.b/T02.b (Supabase local e banco) a
 - `node_modules/next/dist/docs/01-app/02-guides/environment-variables.md`: Next carrega `.env*` da raiz; variáveis `NEXT_PUBLIC_` ficam embutidas no bundle de build; `.env.local` não é carregado em `NODE_ENV=test`.
 - `node_modules/next/dist/docs/01-app/02-guides/local-development.md`: diferencia `next dev` de build/produção e recomenda desenvolvimento nativo para melhor resposta de arquivos, relevante ao escopo localhost.
 
-Nenhum teste, lint, typecheck, build, banco, servidor ou fluxo de login/inbox foi executado nesta tarefa; isso pertence a T02.c e depende do ambiente local de dados.
+## Checks de baseline (T02.c-checks)
+
+- `npx --yes npm@10.9.9 run lint`: exit 0, 40 warnings e 0 errors.
+- `npx --yes npm@10.9.9 run typecheck`: exit 0.
+- `npm test -- --maxWorkers=2`: exit 0, 158 arquivos e 1.695 testes passaram. `vitest --help` documenta `--maxWorkers`. Uma execução inicial sem limite também passou; a repetição limitada é a evidência final.
+- `npx --yes npm@10.9.9 run build`: exit 0 com `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321` e chaves sintéticas de baseline apenas no ambiente do processo. Nenhum Supabase foi iniciado ou contatado.
+- Nenhum `META_APP_SECRET` foi passado ao build. A compilação completou sem essa variável; `vitest.config.ts` já fornece valor sintético estrito aos testes, e o webhook requer secret somente quando seu comportamento é exercitado.
+- Saídas completas: `.t02c-logs/{lint,typecheck,test,test-workers2,build}.log`; diretório ignorado localmente. A suíte reportou aviso do loader de configuração Vite (CommonJS/ESM), também registrado na evidência.
+
+T02.c smoke/login permanece pendente até Infra.b/T02.b provisionar Supabase local. Nenhum servidor foi iniciado.

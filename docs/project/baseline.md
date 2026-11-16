@@ -1,4 +1,4 @@
-# WACRM — baseline T01
+# WACRM — baseline T02.c-checks (complemento de T01/T02.a)
 
 Data: 2026-11-15
 
@@ -33,7 +33,10 @@ Data: 2026-11-15
 
 ## Estado de execução
 
-- Não foram instaladas dependências. Versões locais de Node/npm ainda não foram verificadas; pertencem a T02.a.
-- Nenhum teste, build ou servidor foi executado.
-- Nenhum banco, serviço externo, deployment ou arquivo remoto foi alterado.
+- Node `v22.19.0`; npm do ambiente `10.9.3`; checks via npm `10.9.9` quando disponível por npx. `npm ci` exit 0, 691 pacotes adicionados; hash `package-lock.json` `f5336fdba7b670d3daef78d3bbbdd4872310e608640f384f3e155e05908ae4d7`, inalterado.
+- Lint exit 0: 40 warnings, 0 errors. Typecheck exit 0.
+- Vitest limitado com `npm test -- --maxWorkers=2`: exit 0, 158 arquivos e 1.695 testes passaram. A ajuda local confirmou suporte a `--maxWorkers`. A primeira execução padrão também passou, mas usou os 158 workers padrão.
+- Build exit 0 usando variáveis Supabase de processo com URL loopback `http://127.0.0.1:54321` e placeholders de baseline; nenhum serviço foi contatado. `META_APP_SECRET` não foi necessário para compilar. `vitest.config.ts` injeta valor sintético nos testes; o helper de webhook continua exigindo variável no runtime quando exercitado.
+- Saídas completas dos checks estão em `.t02c-logs/`, excluída localmente por `.git/info/exclude`.
+- Nenhum servidor, login/inbox, banco Supabase, serviço externo, deployment ou arquivo remoto foi alterado. T02.c smoke/login não foi executado.
 - Mudança de escopo comunicada pelo usuário em 2026-11-15: UAZAPI não existe; Evolution API local autorizada somente em localhost. Os planos existentes não foram editados; cabe ao coordenador revisar o contrato antes dos recortes de implementação.
