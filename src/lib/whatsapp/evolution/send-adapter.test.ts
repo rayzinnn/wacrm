@@ -195,4 +195,31 @@ describe('Evolution text send adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledTimes(1);
   });
+
+  it('reconciles an existing reservation without ever calling the provider transport', async () => {
+    const { createEvolutionSendReservationAdapter } =
+      await import('./send-adapter');
+    const { rpc, db } = rpcHarness([
+      [
+        {
+          attempt_id: 'attempt-1',
+          message_row_id: 'message-1',
+          outcome: 'pending',
+          should_send: false,
+        },
+      ],
+    ]);
+    const reconcile = createEvolutionSendReservationAdapter(db);
+
+    await expect(reconcile(input)).resolves.toEqual({
+      attemptId: 'attempt-1',
+      messageRowId: 'message-1',
+      outcome: 'pending',
+      shouldSend: false,
+    });
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0]?.[0]).toBe('reserve_evolution_send');
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

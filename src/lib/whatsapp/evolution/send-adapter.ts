@@ -45,6 +45,13 @@ export interface EvolutionTextSendResult {
   persistenceUncertain: boolean;
 }
 
+export interface EvolutionTextReservationResult {
+  attemptId: string;
+  messageRowId: string;
+  outcome: SendOutcome;
+  shouldSend: boolean;
+}
+
 export class EvolutionSendAdapterError extends Error {
   constructor(
     readonly code:
@@ -153,6 +160,49 @@ function providerFailure(cause: unknown): {
   return { outcome: 'unknown', errorCode: 'worker_error' };
 }
 
+async function reserveEvolutionText(
+  db: Pick<SupabaseClient, 'rpc'>,
+  input: EvolutionTextSendInput
+): Promise<ReservationRow> {
+  validateInput(input);
+  let result: Awaited<ReturnType<typeof db.rpc>>;
+  try {
+    result = await db.rpc('reserve_evolution_send', {
+      p_connection_id: input.connectionId,
+      p_request_id: input.requestId,
+      p_request_hash: requestHash(input),
+      p_conversation_id: input.conversationId,
+      p_sender_type: input.senderType,
+      p_sender_id: input.senderId,
+      p_message: { content_type: 'text', content_text: input.text },
+    });
+  } catch {
+    throw new EvolutionSendAdapterError('reservation_unavailable');
+  }
+  if (result.error)
+    throw new EvolutionSendAdapterError('reservation_unavailable');
+  const reservation = readReservation(result.data);
+  if (!reservation) throw new EvolutionSendAdapterError('reservation_invalid');
+  return reservation;
+}
+
+/** Replays an idempotent reservation without ever calling the provider transport. */
+export function createEvolutionSendReservationAdapter(
+  db: Pick<SupabaseClient, 'rpc'>
+) {
+  return async function reserveEvolutionTextOnly(
+    input: EvolutionTextSendInput
+  ): Promise<EvolutionTextReservationResult> {
+    const reservation = await reserveEvolutionText(db, input);
+    return {
+      attemptId: reservation.attempt_id,
+      messageRowId: reservation.message_row_id,
+      outcome: reservation.outcome,
+      shouldSend: reservation.should_send,
+    };
+  };
+}
+
 export function createEvolutionSendAdapter(
   db: Pick<SupabaseClient, 'rpc'>,
   transport: TextTransport = sendText
@@ -160,28 +210,7 @@ export function createEvolutionSendAdapter(
   return async function sendEvolutionText(
     input: EvolutionTextSendInput
   ): Promise<EvolutionTextSendResult> {
-    validateInput(input);
-
-    let reservationResult: Awaited<ReturnType<typeof db.rpc>>;
-    try {
-      reservationResult = await db.rpc('reserve_evolution_send', {
-        p_connection_id: input.connectionId,
-        p_request_id: input.requestId,
-        p_request_hash: requestHash(input),
-        p_conversation_id: input.conversationId,
-        p_sender_type: input.senderType,
-        p_sender_id: input.senderId,
-        p_message: { content_type: 'text', content_text: input.text },
-      });
-    } catch {
-      throw new EvolutionSendAdapterError('reservation_unavailable');
-    }
-
-    if (reservationResult.error)
-      throw new EvolutionSendAdapterError('reservation_unavailable');
-    const reservation = readReservation(reservationResult.data);
-    if (!reservation)
-      throw new EvolutionSendAdapterError('reservation_invalid');
+    const reservation = await reserveEvolutionText(db, input);
 
     if (!reservation.should_send) {
       return {

@@ -3,7 +3,11 @@ import 'server-only';
 import type { AutomationStep } from '@/types';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { decrypt } from '@/lib/whatsapp/encryption';
-import { createEvolutionSendAdapter } from '@/lib/whatsapp/evolution/send-adapter';
+import {
+  EvolutionSendAdapterError,
+  createEvolutionSendAdapter,
+  createEvolutionSendReservationAdapter,
+} from '@/lib/whatsapp/evolution/send-adapter';
 import { assertAllowedEvolutionOrigin } from '@/lib/whatsapp/evolution/client';
 import type { EvolutionCredentials } from '@/lib/whatsapp/evolution/types';
 
@@ -36,6 +40,7 @@ export class EvolutionSendMessageExecutionError extends Error {
 }
 
 const TERMINAL_CONTEXT_ERRORS = new Set([
+  'root_lineage_invalid',
   'invalid_step_config',
   'interpolation_context_required',
   'step_lineage_invalid',
@@ -67,6 +72,7 @@ interface StepClaim {
   request_id: string | null;
   send_attempt_id: string | null;
   should_execute: boolean;
+  lease_acquired: boolean;
 }
 
 interface StepLedger {
@@ -214,19 +220,37 @@ async function loadExecutionContext(
       .eq('account_id', root.account_id)
       .maybeSingle(),
   ]);
-  if (stepResult.error || !stepResult.data) {
+  if (stepResult.error) {
     throw new EvolutionSendMessageExecutionError(
-      'step_load_failed',
-      'Could not load persisted send_message step'
+      'context_unavailable',
+      'Could not read persisted send_message step'
     );
   }
-  if (eventResult.error || !eventResult.data) {
+  if (!stepResult.data) {
     throw new EvolutionSendMessageExecutionError(
-      'event_load_failed',
-      'Could not load persisted inbound event'
+      'step_lineage_invalid',
+      'Persisted send_message step is unavailable'
     );
   }
-  if (conversationResult.error || !conversationResult.data) {
+  if (eventResult.error) {
+    throw new EvolutionSendMessageExecutionError(
+      'context_unavailable',
+      'Could not read persisted inbound event'
+    );
+  }
+  if (!eventResult.data) {
+    throw new EvolutionSendMessageExecutionError(
+      'event_context_invalid',
+      'Persisted inbound event is unavailable'
+    );
+  }
+  if (conversationResult.error) {
+    throw new EvolutionSendMessageExecutionError(
+      'context_unavailable',
+      'Could not read dispatch conversation'
+    );
+  }
+  if (!conversationResult.data) {
     throw new EvolutionSendMessageExecutionError(
       'conversation_lineage_invalid',
       'Could not resolve the dispatch conversation in its account'
@@ -285,7 +309,13 @@ async function loadExecutionContext(
     .eq('id', root.contact_id)
     .eq('account_id', root.account_id)
     .maybeSingle();
-  if (contactError || !contactData) {
+  if (contactError) {
+    throw new EvolutionSendMessageExecutionError(
+      'context_unavailable',
+      'Could not read dispatch contact'
+    );
+  }
+  if (!contactData) {
     throw new EvolutionSendMessageExecutionError(
       'contact_lineage_invalid',
       'Dispatch contact does not belong to root account'
@@ -310,7 +340,13 @@ async function loadExecutionContext(
     .eq('id', event.connection_id)
     .eq('account_id', root.account_id)
     .maybeSingle();
-  if (connectionError || !connectionData) {
+  if (connectionError) {
+    throw new EvolutionSendMessageExecutionError(
+      'context_unavailable',
+      'Could not read Evolution connection'
+    );
+  }
+  if (!connectionData) {
     throw new EvolutionSendMessageExecutionError(
       'connection_lineage_invalid',
       'Inbound event connection does not belong to root account'
@@ -462,7 +498,7 @@ export async function executeEvolutionAutomationSendMessage(input: {
   }
 
   const { data: claimData, error: claimError } = await db.rpc(
-    'claim_evolution_dispatch_step',
+    'claim_evolution_dispatch_send_step',
     {
       p_dispatch_id: dispatchId,
       p_dispatch_lease_token: dispatchLeaseToken,
@@ -480,6 +516,12 @@ export async function executeEvolutionAutomationSendMessage(input: {
     typeof claim.step_id !== 'string' ||
     !UUID_PATTERN.test(claim.step_id) ||
     typeof claim.should_execute !== 'boolean' ||
+    typeof claim.lease_acquired !== 'boolean' ||
+    typeof claim.request_id !== 'string' ||
+    claim.request_id !== `evolution-step:${claim.step_id}` ||
+    (claim.send_attempt_id !== null &&
+      (typeof claim.send_attempt_id !== 'string' ||
+        !UUID_PATTERN.test(claim.send_attempt_id))) ||
     !['pending', 'processing', 'done', 'skipped', 'failed', 'unknown'].includes(
       claim.state
     )
@@ -488,6 +530,23 @@ export async function executeEvolutionAutomationSendMessage(input: {
       'step_claim_invalid',
       'Evolution send_message claim is invalid'
     );
+  }
+
+  if (!claim.lease_acquired) {
+    if (claim.should_execute) {
+      throw new EvolutionSendMessageExecutionError(
+        'step_claim_invalid',
+        'A send_message claim cannot execute without acquiring its lease'
+      );
+    }
+    return {
+      executed: false,
+      step_id: claim.step_id,
+      action_key: actionKey,
+      state: claim.state,
+      request_id: claim.request_id,
+      send_attempt_id: claim.send_attempt_id,
+    };
   }
 
   const { data: ledgerData, error: ledgerError } = await db
@@ -522,16 +581,6 @@ export async function executeEvolutionAutomationSendMessage(input: {
     );
   }
 
-  if (!claim.should_execute) {
-    return {
-      executed: false,
-      step_id: ledger.id,
-      action_key: actionKey,
-      state: ledger.state,
-      request_id: ledger.request_id!,
-      send_attempt_id: ledger.send_attempt_id,
-    };
-  }
   if (
     claim.state !== 'processing' ||
     !claim.lease_token ||
@@ -548,11 +597,55 @@ export async function executeEvolutionAutomationSendMessage(input: {
       'A send attempt exists without a non-executable claim'
     );
   }
+  if (!claim.should_execute && ledger.send_attempt_id === null) {
+    throw new EvolutionSendMessageExecutionError(
+      'unsafe_reservation_state',
+      'A recovery claim has no linked send attempt'
+    );
+  }
 
   let context: Awaited<ReturnType<typeof loadExecutionContext>>;
   try {
     context = await loadExecutionContext(db, root, actionKey);
   } catch (error) {
+    if (!claim.should_execute) {
+      if (
+        !(error instanceof EvolutionSendMessageExecutionError) ||
+        !TERMINAL_CONTEXT_ERRORS.has(error.code)
+      ) {
+        return {
+          executed: false,
+          step_id: ledger.id,
+          action_key: actionKey,
+          state: 'processing',
+          request_id: ledger.request_id!,
+          send_attempt_id: ledger.send_attempt_id,
+          outcome: 'unknown',
+          error_code: 'recovery_context_unavailable',
+        };
+      }
+      // A linked reservation may already have been accepted. Changed lineage or
+      // configuration cannot turn that uncertain delivery into a safe failure.
+      const completed = await completeStep(db, {
+        stepId: ledger.id,
+        dispatchLeaseToken,
+        stepLeaseToken: claim.lease_token,
+        requestId: ledger.request_id!,
+        attemptId: ledger.send_attempt_id,
+        state: 'unknown',
+        errorCode: 'recovery_context_unavailable',
+      });
+      return {
+        executed: false,
+        step_id: completed.id,
+        action_key: actionKey,
+        state: completed.state,
+        request_id: ledger.request_id!,
+        send_attempt_id: completed.send_attempt_id,
+        outcome: 'unknown',
+        error_code: 'recovery_context_unavailable',
+      };
+    }
     if (
       !(error instanceof EvolutionSendMessageExecutionError) ||
       !TERMINAL_CONTEXT_ERRORS.has(error.code)
@@ -578,6 +671,75 @@ export async function executeEvolutionAutomationSendMessage(input: {
       error_code: error.code,
     };
   }
+  if (!claim.should_execute) {
+    const reconcile = createEvolutionSendReservationAdapter(db);
+    let reservation;
+    try {
+      reservation = await reconcile({
+        ...context,
+        senderType: 'bot',
+        senderId: root.user_id,
+        requestId: ledger.request_id!,
+      });
+    } catch {
+      // Reservation lookup failure says nothing about whether the provider
+      // accepted the earlier POST. Leave the fenced step recoverable, but never
+      // authorize transport from this branch.
+      return {
+        executed: false,
+        step_id: ledger.id,
+        action_key: actionKey,
+        state: 'processing',
+        request_id: ledger.request_id!,
+        send_attempt_id: ledger.send_attempt_id,
+        outcome: 'unknown',
+        error_code: 'reservation_reconciliation_unavailable',
+      };
+    }
+    if (
+      reservation.attemptId !== ledger.send_attempt_id ||
+      reservation.shouldSend
+    ) {
+      throw new EvolutionSendMessageExecutionError(
+        'unsafe_reservation_replay',
+        'Existing send attempt did not replay as a non-sendable reservation'
+      );
+    }
+    if (reservation.outcome === 'pending') {
+      return {
+        executed: false,
+        step_id: ledger.id,
+        action_key: actionKey,
+        state: 'processing',
+        request_id: ledger.request_id!,
+        send_attempt_id: reservation.attemptId,
+        outcome: 'pending',
+      };
+    }
+
+    const completion = completionForOutcome(reservation.outcome);
+    const completed = await completeStep(db, {
+      stepId: ledger.id,
+      dispatchLeaseToken,
+      stepLeaseToken: claim.lease_token,
+      requestId: ledger.request_id!,
+      attemptId: reservation.attemptId,
+      state: completion.state,
+      errorCode: completion.errorCode,
+    });
+    return {
+      executed: false,
+      step_id: completed.id,
+      action_key: actionKey,
+      state: completed.state,
+      request_id: ledger.request_id!,
+      send_attempt_id: completed.send_attempt_id,
+      outcome: reservation.outcome,
+      message_row_id: reservation.messageRowId,
+      ...(completion.errorCode ? { error_code: completion.errorCode } : {}),
+    };
+  }
+
   const send = createEvolutionSendAdapter(db);
   let sendResult;
   try {
@@ -587,7 +749,21 @@ export async function executeEvolutionAutomationSendMessage(input: {
       senderId: root.user_id,
       requestId: ledger.request_id!,
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof EvolutionSendAdapterError) {
+      // Adapter errors occur before transport. Keep the step retryable instead
+      // of recording a delivery uncertainty for a POST that never ran.
+      return {
+        executed: false,
+        step_id: ledger.id,
+        action_key: actionKey,
+        state: 'processing',
+        request_id: ledger.request_id!,
+        send_attempt_id: null,
+        outcome: 'pending',
+        error_code: 'send_reservation_unavailable',
+      };
+    }
     const completed = await completeStep(db, {
       stepId: ledger.id,
       dispatchLeaseToken,
@@ -632,7 +808,7 @@ export async function executeEvolutionAutomationSendMessage(input: {
     errorCode: completion.errorCode,
   });
   return {
-    executed: claim.should_execute,
+    executed: true,
     step_id: completed.id,
     action_key: actionKey,
     state: completed.state,
