@@ -6,7 +6,7 @@ export type NormalizedConnectionEvent = {
   occurredAt: string
 }
 
-export type NormalizedMessageEvent = {
+export type NormalizedTextMessageEvent = {
   kind: 'message'
   eventKey: string
   externalMessageId: string
@@ -19,6 +19,24 @@ export type NormalizedMessageEvent = {
   mediaRef: null
 }
 
+export type NormalizedMediaKind = 'image' | 'document' | 'audio' | 'video'
+
+export type EvolutionMediaRef = {
+  version: 1
+  key: {
+    remoteJid: string
+    id: string
+    fromMe: false
+  }
+}
+
+export type NormalizedMediaMessageEvent = Omit<NormalizedTextMessageEvent, 'contentType' | 'text' | 'mediaRef'> & {
+  contentType: NormalizedMediaKind
+  text: null
+  mediaRef: EvolutionMediaRef
+}
+
+export type NormalizedMessageEvent = NormalizedTextMessageEvent | NormalizedMediaMessageEvent
 export type NormalizedEvent = NormalizedConnectionEvent | NormalizedMessageEvent
 
 export class NormalizationError extends Error {
@@ -84,6 +102,13 @@ function messageTimestampToIso(value: unknown): string {
   }
 }
 
+const MEDIA_TYPE_BY_MESSAGE_TYPE: Record<string, NormalizedMediaKind> = {
+  imageMessage: 'image',
+  documentMessage: 'document',
+  audioMessage: 'audio',
+  videoMessage: 'video',
+}
+
 function normalizeInboundText(payload: Record<string, unknown>): NormalizedMessageEvent[] {
   if (!nonEmptyString(payload.instance) || !isRecord(payload.data)) throw new NormalizationError()
 
@@ -101,16 +126,15 @@ function normalizeInboundText(payload: Record<string, unknown>): NormalizedMessa
 
   const occurredAt = messageTimestampToIso(data.messageTimestamp)
 
-  if (data.messageType !== 'conversation' || data.key.fromMe) return []
+  if (data.key.fromMe) return []
   if (!/^\d{8,15}@s\.whatsapp\.net$/.test(data.key.remoteJid)) return []
-  if (!nonEmptyString(data.message.conversation)) throw new NormalizationError()
 
   const externalMessageId = data.key.id
   const eventKey = createHash('sha256')
     .update(JSON.stringify([externalMessageId]))
     .digest('hex')
 
-  return [{
+  const baseEvent = {
     kind: 'message',
     eventKey: `message:sha256:${eventKey}`,
     externalMessageId,
@@ -118,9 +142,40 @@ function normalizeInboundText(payload: Record<string, unknown>): NormalizedMessa
     occurredAt,
     fromMe: false,
     sentByApi: false,
-    contentType: 'text',
-    text: data.message.conversation,
-    mediaRef: null,
+  } as const
+
+  if (data.messageType === 'conversation') {
+    if (!nonEmptyString(data.message.conversation)) throw new NormalizationError()
+    return [{
+      ...baseEvent,
+      contentType: 'text',
+      text: data.message.conversation,
+      mediaRef: null,
+    }]
+  }
+
+  const mediaKind = MEDIA_TYPE_BY_MESSAGE_TYPE[data.messageType]
+  if (!mediaKind) return []
+  if (
+    data.key.id.length > 200
+    || !/^[A-Za-z0-9_.:-]+$/.test(data.key.id)
+    || !isRecord(data.message[data.messageType])
+  ) {
+    throw new NormalizationError()
+  }
+
+  return [{
+    ...baseEvent,
+    contentType: mediaKind,
+    text: null,
+    mediaRef: {
+      version: 1,
+      key: {
+        remoteJid: data.key.remoteJid,
+        id: data.key.id,
+        fromMe: false,
+      },
+    },
   }]
 }
 

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { getEvolutionCapabilities } from './capabilities'
 import type { NormalizedEvent } from './events'
 
 export class EventQueueError extends Error {
@@ -45,11 +46,28 @@ export async function enqueueEvents(
     if (!uniqueEvents.has(event.eventKey)) uniqueEvents.set(event.eventKey, event)
   }
 
-  const rows = [...uniqueEvents.values()].map((event) => ({
-    connection_id: connectionId,
-    event_key: event.eventKey,
-    normalized_event: projectNormalizedEvent(event),
-  }))
+  const enabledMedia = new Set(getEvolutionCapabilities().media)
+  const rows = [...uniqueEvents.values()].map((event) => {
+    const mediaEvent = event.kind === 'message' && event.contentType !== 'text'
+    const enabledMediaEvent = mediaEvent && enabledMedia.has(event.contentType)
+    const disabledMediaEvent = mediaEvent && !enabledMediaEvent
+
+    return {
+      connection_id: connectionId,
+      event_key: event.eventKey,
+      normalized_event: projectNormalizedEvent(event),
+      ...(enabledMediaEvent ? {
+        state: 'pending',
+        media_state: 'pending',
+      } : {}),
+      ...(disabledMediaEvent ? {
+        state: 'failed',
+        processed_at: new Date().toISOString(),
+        last_error_code: 'unsupported_media_kind',
+        media_state: 'failed',
+      } : {}),
+    }
+  })
 
   try {
     const { data, error } = await supabaseAdmin()

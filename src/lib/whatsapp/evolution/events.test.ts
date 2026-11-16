@@ -152,13 +152,74 @@ describe('normalizeWebhook', () => {
     expect(normalizeWebhook(payload, messageFixture.receivedAt)).toEqual([])
   })
 
-  it.each(['imageMessage', 'audioMessage', 'extendedTextMessage'])('ignores unsupported message type %s', (messageType) => {
+  it.each(['extendedTextMessage', 'stickerMessage', 'ptvMessage', 'documentWithCaptionMessage'])('ignores unsupported message type %s', (messageType) => {
     const payload = cloneMessagePayload()
     payloadData(payload).messageType = messageType
     payloadData(payload).message = { [`${messageType}`]: { text: 'synthetic unsupported content' } }
 
     expect(normalizeWebhook(payload, messageFixture.receivedAt)).toEqual([])
   })
+
+  it.each([
+    ['imageMessage', 'image'],
+    ['documentMessage', 'document'],
+    ['audioMessage', 'audio'],
+    ['videoMessage', 'video'],
+  ] as const)('normalizes the source-shaped synthetic %s envelope to a key-only reference', (messageType, contentType) => {
+    const payload = cloneMessagePayload()
+    const mediaMarker = `SYNTHETIC_${contentType.toUpperCase()}_BYTES_MARKER`
+    const urlMarker = 'https://synthetic.invalid/private-media-url-marker'
+    const tokenMarker = 'SYNTHETIC_MEDIA_TOKEN_MARKER'
+    const captionMarker = 'SYNTHETIC_PRIVATE_CAPTION_MARKER'
+    payloadKey(payload).id = 'SYNTHETIC_MEDIA_MESSAGE_ID'
+    payloadData(payload).messageType = messageType
+    payloadData(payload).message = {
+      [messageType]: {
+        url: urlMarker,
+        mediaKey: tokenMarker,
+        fileSha256: mediaMarker,
+        caption: captionMarker,
+      },
+    }
+
+    const result = normalizeWebhook(payload, messageFixture.receivedAt)
+
+    expect(result).toEqual([{
+      kind: 'message',
+      eventKey: expect.stringMatching(/^message:sha256:/),
+      externalMessageId: 'SYNTHETIC_MEDIA_MESSAGE_ID',
+      peer: '5521999990000@s.whatsapp.net',
+      occurredAt,
+      fromMe: false,
+      sentByApi: false,
+      contentType,
+      text: null,
+      mediaRef: {
+        version: 1,
+        key: {
+          remoteJid: '5521999990000@s.whatsapp.net',
+          id: 'SYNTHETIC_MEDIA_MESSAGE_ID',
+          fromMe: false,
+        },
+      },
+    }])
+    const serialized = JSON.stringify(result)
+    for (const sensitiveMarker of [urlMarker, tokenMarker, mediaMarker, captionMarker]) {
+      expect(serialized).not.toContain(sensitiveMarker)
+    }
+  })
+
+  it.each(['imageMessage', 'documentMessage', 'audioMessage', 'videoMessage'])(
+    'rejects a recognized media envelope without its matching message object: %s',
+    (messageType) => {
+      const payload = cloneMessagePayload()
+      payloadKey(payload).id = 'SYNTHETIC_MALFORMED_MEDIA_ID'
+      payloadData(payload).messageType = messageType
+      payloadData(payload).message = { conversation: 'not the declared media object' }
+
+      expect(() => normalizeWebhook(payload, messageFixture.receivedAt)).toThrow(NormalizationError)
+    },
+  )
 
   it.each(['messages.update', 'send.message', 'SEND_MESSAGE', 'unknown.event'])('ignores unsupported event %s', (event) => {
     const payload = cloneMessagePayload()

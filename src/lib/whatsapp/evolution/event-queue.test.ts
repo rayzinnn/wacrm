@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ admin: undefined as unknown }))
+const mocks = vi.hoisted(() => ({ admin: undefined as unknown, mediaCapabilities: [] as string[] }))
 
 vi.mock('@/lib/flows/admin-client', () => ({
   supabaseAdmin: () => {
     if (mocks.admin === 'throw-client') throw new Error('private client secret')
     return mocks.admin
   },
+}))
+
+vi.mock('./capabilities', () => ({
+  getEvolutionCapabilities: () => ({ media: mocks.mediaCapabilities }),
 }))
 
 import { EventQueueError, enqueueEvents } from './event-queue'
@@ -37,6 +41,26 @@ const inboundMessage: NormalizedEvent = {
   mediaRef: null,
 }
 
+const inboundImage: NormalizedEvent = {
+  kind: 'message',
+  eventKey: 'message:sha256:synthetic-image-1',
+  externalMessageId: 'SYNTHETIC_IMAGE_MESSAGE_ID',
+  peer: '5521999990000@s.whatsapp.net',
+  occurredAt: '2026-11-16T16:53:58.000Z',
+  fromMe: false,
+  sentByApi: false,
+  contentType: 'image',
+  text: null,
+  mediaRef: {
+    version: 1,
+    key: {
+      remoteJid: '5521999990000@s.whatsapp.net',
+      id: 'SYNTHETIC_IMAGE_MESSAGE_ID',
+      fromMe: false,
+    },
+  },
+}
+
 function configureAdmin(data: Array<{ id: string }> | null, error: unknown = null) {
   const select = vi.fn().mockResolvedValue({ data, error })
   const upsert = vi.fn().mockReturnValue({ select })
@@ -47,6 +71,7 @@ function configureAdmin(data: Array<{ id: string }> | null, error: unknown = nul
 
 afterEach(() => {
   mocks.admin = undefined
+  mocks.mediaCapabilities = []
   vi.clearAllMocks()
 })
 
@@ -189,6 +214,75 @@ describe('enqueueEvents', () => {
     expect(stored).not.toContain('private-message-secret-marker')
     expect(stored).not.toContain('private-device-metadata-marker')
     expect(stored).not.toContain('contextInfo')
+  })
+
+  it('terminally queues disabled media without persisting URL, bytes, token, or caption', async () => {
+    const query = configureAdmin([{ id: 'event-image-1' }])
+    const privateMarkers = [
+      'https://synthetic.invalid/private-media-url-marker',
+      'SYNTHETIC_MEDIA_BYTES_MARKER',
+      'SYNTHETIC_MEDIA_TOKEN_MARKER',
+      'SYNTHETIC_PRIVATE_CAPTION_MARKER',
+    ]
+    const eventWithRawExtras = {
+      ...inboundImage,
+      payload: Object.fromEntries(privateMarkers.map((value, index) => [`field${index}`, value])),
+      url: privateMarkers[0],
+      token: privateMarkers[2],
+      caption: privateMarkers[3],
+      bytes: privateMarkers[1],
+    } as NormalizedEvent
+
+    await enqueueEvents(connectionId, [eventWithRawExtras])
+
+    expect(query.upsert).toHaveBeenCalledWith([expect.objectContaining({
+      connection_id: connectionId,
+      event_key: inboundImage.eventKey,
+      state: 'failed',
+      processed_at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      last_error_code: 'unsupported_media_kind',
+      media_state: 'failed',
+      normalized_event: {
+        kind: 'message',
+        eventKey: inboundImage.eventKey,
+        externalMessageId: 'SYNTHETIC_IMAGE_MESSAGE_ID',
+        peer: '5521999990000@s.whatsapp.net',
+        occurredAt: inboundImage.occurredAt,
+        fromMe: false,
+        sentByApi: false,
+        contentType: 'image',
+        text: null,
+        mediaRef: inboundImage.mediaRef,
+      },
+    })], { onConflict: 'connection_id,event_key', ignoreDuplicates: true })
+    const stored = JSON.stringify(query.upsert.mock.calls[0][0])
+    for (const marker of privateMarkers) expect(stored).not.toContain(marker)
+    expect(query.from).toHaveBeenCalledTimes(1)
+    expect(query.select).toHaveBeenCalledWith('id')
+  })
+
+  it('queues enabled media as pending without changing the real capability', async () => {
+    mocks.mediaCapabilities = ['image']
+    const query = configureAdmin([{ id: 'event-image-pending' }])
+
+    await expect(enqueueEvents(connectionId, [inboundImage])).resolves.toEqual({
+      inserted: 1,
+      duplicates: 0,
+    })
+
+    expect(query.upsert).toHaveBeenCalledWith([expect.objectContaining({
+      connection_id: connectionId,
+      event_key: inboundImage.eventKey,
+      state: 'pending',
+      media_state: 'pending',
+      normalized_event: expect.objectContaining({
+        contentType: 'image',
+        text: null,
+        mediaRef: inboundImage.mediaRef,
+      }),
+    })], { onConflict: 'connection_id,event_key', ignoreDuplicates: true })
+    expect(query.upsert.mock.calls[0][0][0]).not.toHaveProperty('last_error_code')
+    expect(query.upsert.mock.calls[0][0][0]).not.toHaveProperty('processed_at')
   })
 
   it('deduplicates inbound message replay by event key and keeps the first projection', async () => {
