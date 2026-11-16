@@ -25,9 +25,10 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T04.c | Concluído | `evidence/T04.c.md`; 69 caminhos, zero sem classificação; milestone de sessão aprovado separadamente. |
 | T05.a1 | Concluído | `evidence/T05.a1.md`; cliente de estado/QR e origem segura, 32 testes e typecheck; commit `a0b984b`. Texto/mídia ainda não implementados. |
 | T06.a1 | Concluído | `evidence/T06.a1.md`; migration real `20261116040603_whatsapp_connections.sql`, isolamento SQL aprovado; commit `ac5ec8f`. |
-| T06.b1 | Em andamento | Cedro implementa store criptografado, resumo seguro e estado observado. |
+| T06.b1 | Concluído | `evidence/T06.b1.md`; 17 testes e typecheck, store revisado; commit `b9f3fb9`. |
 | T07.a/b | Em andamento | Quartzo substitui config GET/POST; Âmbar implementa connect/status e erros sanitizados. |
 | T07.c | Pendente | Painel Evolution e QR em memória após rotas/store verificadas. |
+| T13.a1 | Em andamento | Cedro retira apenas os antigos endpoints Meta de ingresso/registro com HTTP 410; novo receptor permanece separado. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
 
