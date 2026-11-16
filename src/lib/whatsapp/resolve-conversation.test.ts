@@ -243,7 +243,7 @@ describe('resolveConversationByPhone', () => {
   });
 
   it('creates contact + conversation when none exist', async () => {
-    const script = {
+    const script: Script = {
       evolutionConnection: { id: 'connection-1', account_id: 'acct', created_by: 'owner-1', provider: 'evolution' as const },
       contactCandidates: [],
       insertedContactId: 'c2',
