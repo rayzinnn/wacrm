@@ -1,69 +1,41 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const templateUpdates: { patch: Record<string, unknown>; id: unknown }[] = []
-const templateInserts: Record<string, unknown>[] = []
-let localTemplates: { id: string }[] = []
+let callerRole = 'admin'
+let signedIn = true
+const tablesRead: string[] = []
 
 function makeSupabaseMock() {
   function builder(table: string) {
-    const filters: [string, unknown][] = []
-    let pendingUpdate: Record<string, unknown> | null = null
-
-    const result = () => {
-      switch (table) {
-        case 'profiles':
-          return { data: { account_id: 'acct-1', account_role: 'admin' }, error: null }
-        case 'accounts':
-          return { data: { id: 'acct-1', name: 'Acme' }, error: null }
-        case 'whatsapp_config':
-          return {
-            data: { id: 'cfg-1', account_id: 'acct-1', waba_id: 'WABA-1', access_token: 'enc' },
-            error: null,
-          }
-        case 'message_templates':
-          return { data: localTemplates, error: null }
-        default:
-          return { data: null, error: null }
-      }
-    }
-
     const b: Record<string, unknown> = {}
     const chain = () => b
-    for (const m of ['select', 'order', 'limit']) b[m] = vi.fn(chain)
-    b.eq = vi.fn((column: string, value: unknown) => {
-      filters.push([column, value])
-      if (pendingUpdate && column === 'id') {
-        templateUpdates.push({ patch: pendingUpdate, id: value })
-      }
-      return b
+    for (const method of ['select', 'eq', 'order', 'limit']) b[method] = vi.fn(chain)
+    b.update = vi.fn(chain)
+    b.insert = vi.fn(chain)
+    b.single = vi.fn(async () => {
+      if (table === 'profiles') return { data: { account_id: 'acct-1', account_role: callerRole }, error: null }
+      if (table === 'accounts') return { data: { id: 'acct-1', name: 'Fixture' }, error: null }
+      if (table === 'whatsapp_config') return { data: { waba_id: 'waba-sentinel', access_token: 'cipher-sentinel' }, error: null }
+      return { data: null, error: null }
     })
-    b.update = vi.fn((patch: Record<string, unknown>) => {
-      pendingUpdate = patch
-      return b
-    })
-    b.insert = vi.fn((row: Record<string, unknown>) => {
-      if (table === 'message_templates') templateInserts.push(row)
-      return b
-    })
-    b.single = vi.fn(async () => result())
     b.maybeSingle = vi.fn(async () => {
-      if (table === 'message_templates') {
-        return localTemplates.length > 1
-          ? { data: null, error: { message: 'multiple rows returned' } }
-          : { data: localTemplates[0] ?? null, error: null }
-      }
-      return result()
+      if (table === 'profiles') return { data: { account_id: 'acct-1', account_role: callerRole }, error: null }
+      if (table === 'accounts') return { data: { id: 'acct-1', name: 'Fixture' }, error: null }
+      return { data: null, error: null }
     })
-    b.then = (resolve: (v: unknown) => unknown) =>
-      resolve(pendingUpdate || table !== 'message_templates' ? { data: null, error: null } : result())
+    b.then = (resolve: (value: unknown) => unknown) => resolve({ data: [], error: null })
     return b
   }
 
   return {
     auth: {
-      getUser: vi.fn(async () => ({ data: { user: { id: 'syncing-admin' } }, error: null })),
+      getUser: vi.fn(async () => signedIn
+        ? { data: { user: { id: 'user-1' } }, error: null }
+        : { data: { user: null }, error: { message: 'no session' } }),
     },
-    from: vi.fn((table: string) => builder(table)),
+    from: vi.fn((table: string) => {
+      tablesRead.push(table)
+      return builder(table)
+    }),
   }
 }
 
@@ -74,76 +46,81 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
-  decrypt: vi.fn(() => 'plaintext-token'),
-  encrypt: vi.fn(() => 'enc'),
-  isLegacyFormat: vi.fn(() => false),
+  decrypt: vi.fn(() => 'token-sentinel'),
 }))
 
 import { POST } from './route'
 import { __resetRateLimitForTests } from '@/lib/rate-limit'
 
-const META_TEMPLATE = {
-  id: 'meta-1',
-  name: 'order_update',
-  language: 'en_US',
-  status: 'APPROVED',
-  category: 'UTILITY',
-  components: [{ type: 'BODY', text: 'Hello {{1}}' }],
+function makeRequest() {
+  const request = new Request('http://localhost/api/whatsapp/templates/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accountId: 'forged-account', id: 'saved-template', name: 'saved_template' }),
+  })
+  const json = vi.spyOn(request, 'json')
+  return { request, json }
 }
 
 beforeEach(() => {
   __resetRateLimitForTests()
-  templateUpdates.length = 0
-  templateInserts.length = 0
-  localTemplates = []
+  callerRole = 'admin'
+  signedIn = true
+  tablesRead.length = 0
   supabaseMock = makeSupabaseMock()
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(JSON.stringify({ data: [META_TEMPLATE] }), { status: 200 })),
-  )
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    data: [{
+      id: 'graph-template-sentinel',
+      name: 'saved_template',
+      language: 'en_US',
+      status: 'APPROVED',
+      category: 'UTILITY',
+      components: [{ type: 'BODY', text: 'Saved template body.' }],
+    }],
+  }), { status: 200 })))
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('POST /api/whatsapp/templates/sync', () => {
-  it('updates an existing row without taking over its author', async () => {
-    localTemplates = [{ id: 'local-1' }]
+describe('POST /api/whatsapp/templates/sync — unsupported capability gate', () => {
+  it('returns 401 for a missing session before business I/O or Graph fetch', async () => {
+    signedIn = false
+    const { request, json } = makeRequest()
 
-    const res = await POST()
-    const body = await res.json()
+    const response = await POST(request)
 
-    expect(body).toMatchObject({ success: true, updated: 1, inserted: 0 })
-    expect(templateUpdates).toHaveLength(1)
-    expect(templateUpdates[0].id).toBe('local-1')
-    expect(templateUpdates[0].patch).not.toHaveProperty('user_id')
-    expect(templateUpdates[0].patch).toMatchObject({
-      account_id: 'acct-1',
-      meta_template_id: 'meta-1',
-      status: 'APPROVED',
-    })
+    expect(response.status).toBe(401)
+    expect(json).not.toHaveBeenCalled()
+    expect(tablesRead).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('records the syncing admin as the author of a newly imported row', async () => {
-    const res = await POST()
-    const body = await res.json()
+  it.each(['agent', 'viewer'])('returns 403 for %s before business I/O or Graph fetch', async (role) => {
+    callerRole = role
+    const { request, json } = makeRequest()
 
-    expect(body).toMatchObject({ success: true, inserted: 1, updated: 0 })
-    expect(templateInserts[0]).toMatchObject({
-      account_id: 'acct-1',
-      user_id: 'syncing-admin',
-      name: 'order_update',
-    })
+    const response = await POST(request)
+
+    expect(response.status).toBe(403)
+    expect(json).not.toHaveBeenCalled()
+    expect(tablesRead).toEqual(['profiles', 'accounts'])
+    expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('still syncs when the account holds duplicate rows for the same name and language', async () => {
-    localTemplates = [{ id: 'newest' }, { id: 'older' }]
+  it('returns 422 for an authorized admin before reading template/config rows or calling Graph', async () => {
+    const { request, json } = makeRequest()
+    const response = await POST(request)
 
-    const res = await POST()
-    const body = await res.json()
-
-    expect(body).toMatchObject({ success: true, updated: 1, errors: [] })
-    expect(templateUpdates[0].id).toBe('newest')
+    expect(response.status).toBe(422)
+    expect(await response.json()).toEqual({
+      error: 'Templates are not supported by this provider.',
+      code: 'unsupported_capability',
+      capability: 'templates',
+    })
+    expect(json).not.toHaveBeenCalled()
+    expect(tablesRead).toEqual(['profiles', 'accounts'])
+    expect(fetch).not.toHaveBeenCalled()
   })
 })
