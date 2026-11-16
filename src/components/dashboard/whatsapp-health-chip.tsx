@@ -2,63 +2,79 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { useFormatter, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 
-import type { PhoneHealth } from '@/lib/whatsapp/phone-health'
-import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/use-auth'
 
-const DOT_CLASS = {
-  GREEN: 'bg-status-good',
-  YELLOW: 'bg-status-warning',
-  RED: 'bg-status-critical',
-  UNKNOWN: 'bg-muted-foreground/60',
-} as const
+type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'unknown'
+type ConnectionDto = { configured: boolean; state: ConnectionState }
+type AccountConnection = { accountId: string; dto: ConnectionDto }
+
+const STATE_DOT_CLASS: Record<ConnectionState, string> = {
+  connected: 'bg-status-good',
+  connecting: 'bg-status-warning',
+  disconnected: 'bg-status-critical',
+  unknown: 'bg-muted-foreground/60',
+}
+
+function isConnectionDto(value: unknown): value is ConnectionDto {
+  if (!value || typeof value !== 'object') return false
+  const dto = value as Record<string, unknown>
+  return typeof dto.configured === 'boolean'
+    && (dto.state === 'connected' || dto.state === 'connecting' || dto.state === 'disconnected' || dto.state === 'unknown')
+}
 
 export function WhatsAppHealthChip() {
-  const t = useTranslations('Dashboard.overview.health')
-  const format = useFormatter()
-  const [health, setHealth] = useState<PhoneHealth | null>(null)
+  const { accountId } = useAuth()
+  const t = useTranslations('Settings.whatsapp')
+  const [connection, setConnection] = useState<AccountConnection | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-    fetch('/api/whatsapp/health')
-      .then((res) => (res.ok ? (res.json() as Promise<PhoneHealth>) : null))
-      .then((body) => {
-        if (!cancelled && body) setHealth(body)
+    if (!accountId) return
+
+    const controller = new AbortController()
+    let active = true
+
+    fetch('/api/whatsapp/config', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null
+        const dto: unknown = await response.json()
+        return isConnectionDto(dto) ? dto : null
+      })
+      .then((dto) => {
+        if (active && dto) setConnection({ accountId, dto })
       })
       .catch(() => {})
+
     return () => {
-      cancelled = true
+      active = false
+      controller.abort()
     }
-  }, [])
+  }, [accountId])
 
-  if (!health) return null
+  const current = connection?.accountId === accountId ? connection.dto : null
+  if (!current) return null
 
-  const limit =
-    health.limit?.kind === 'unlimited'
-      ? t('unlimited')
-      : health.limit
-        ? t('perDay', { count: format.number(health.limit.perDay, { notation: 'compact' }) })
-        : null
-
-  const label =
-    health.state === 'disconnected'
-      ? t('disconnected')
-      : health.state === 'unavailable'
-        ? t('unavailable')
-        : [health.displayPhoneNumber, t(`quality.${health.quality}`), limit].filter(Boolean).join(' · ')
-
-  const dot =
-    health.state === 'connected' ? DOT_CLASS[health.quality] : health.state === 'disconnected' ? DOT_CLASS.RED : DOT_CLASS.UNKNOWN
+  const stateLabel = !current.configured
+    ? t('stateNotConfigured')
+    : current.state === 'connected'
+      ? t('stateConnected')
+      : current.state === 'connecting'
+        ? t('stateConnecting')
+        : current.state === 'disconnected'
+          ? t('stateDisconnected')
+          : t('stateUnknown')
+  const dotState = current.configured ? current.state : 'disconnected'
 
   return (
     <Link
       href="/settings?tab=whatsapp"
-      title={t('title')}
+      title={t('sessionState')}
+      aria-label={`${t('sessionState')}: ${stateLabel}`}
       className="inline-flex h-8 max-w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <span className={cn('size-2 shrink-0 rounded-full', dot)} aria-hidden />
-      <span className="truncate">{label}</span>
+      <span className={`size-2 shrink-0 rounded-full ${STATE_DOT_CLASS[dotState]}`} aria-hidden="true" />
+      <span className="truncate">{stateLabel}</span>
     </Link>
   )
 }

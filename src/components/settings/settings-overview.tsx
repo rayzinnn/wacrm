@@ -27,6 +27,7 @@ interface OverviewCounts {
 }
 
 interface WhatsAppStatus {
+  accountId: string;
   configured: boolean;
   connected: boolean;
 }
@@ -38,6 +39,7 @@ export function SettingsOverview({
 }) {
   const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
     useAuth();
+  const userId = user?.id;
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
   const tRoles = useTranslations('Settings.roles');
@@ -45,15 +47,10 @@ export function SettingsOverview({
 
   const [counts, setCounts] = useState<OverviewCounts | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
-  // WhatsApp status is tracked separately: its health check decrypts the
-  // token and pings Meta, which is far slower than the cheap count
-  // queries. Gating it independently keeps a slow/flaky Meta round-trip
-  // from blanking the rest of the landing.
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
-  const [whatsappLoading, setWhatsappLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !accountId) return;
+    if (!userId || !accountId) return;
     let cancelled = false;
     const supabase = createClient();
     const acctId = accountId;
@@ -116,34 +113,48 @@ export function SettingsOverview({
       setCountsLoading(false);
     })();
 
-    // WhatsApp connection status — slower, independent.
-    (async () => {
-      setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
-        supabase
-          .from('whatsapp_config')
-          .select('phone_number_id')
-          .eq('account_id', acctId)
-          .maybeSingle(),
-        fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
-      ]);
-      if (cancelled) return;
-      setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
-        connected: health.status === 'fulfilled' && !!health.value?.connected,
-      });
-      setWhatsappLoading(false);
-    })();
-
     return () => {
       cancelled = true;
     };
-  }, [user?.id, accountId, canManageMembers]);
+  }, [userId, accountId, canManageMembers]);
+
+  useEffect(() => {
+    if (!userId || !accountId) return;
+
+    const controller = new AbortController();
+    let active = true;
+
+    fetch('/api/whatsapp/config', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        const dto: unknown = await response.json();
+        if (!dto || typeof dto !== 'object') return null;
+        const value = dto as Record<string, unknown>;
+        if (typeof value.configured !== 'boolean' || typeof value.state !== 'string') return null;
+        return {
+          configured: value.configured,
+          connected: value.configured && value.state === 'connected',
+        };
+      })
+      .then((status) => {
+        if (active && status) setWhatsapp({ accountId, ...status });
+        else if (active) setWhatsapp({ accountId, configured: false, connected: false });
+      })
+      .catch(() => {
+        if (active) setWhatsapp({ accountId, configured: false, connected: false });
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [userId, accountId]);
 
   const displayName = profile?.full_name || profile?.email || t('yourAccount');
   const initial = (profile?.full_name || profile?.email || 'U').charAt(0).toUpperCase();
   const roleMeta = accountRole ? ROLE_META[accountRole] : null;
   const RoleIcon = roleMeta?.icon;
+  const whatsappForAccount = whatsapp?.accountId === accountId ? whatsapp : null;
 
   const currencyLabel =
     CURRENCIES.find((c) => c.code === defaultCurrency)?.label ?? defaultCurrency;
@@ -159,10 +170,10 @@ export function SettingsOverview({
   }[] = [
     {
       section: 'whatsapp',
-      loading: whatsappLoading,
-      subtitle: !whatsapp?.configured ? (
+      loading: Boolean(accountId && !whatsappForAccount),
+      subtitle: !whatsappForAccount?.configured ? (
         t('notSetup')
-      ) : whatsapp.connected ? (
+      ) : whatsappForAccount.connected ? (
         <>
           <StatusDot tone="ok" /> {t('connected')}
         </>
