@@ -16,6 +16,8 @@ let refreshedCookies: Array<{
   value: string;
   options: Record<string, unknown>;
 }> = [];
+let createServerClientCalls = 0;
+let getUserCalls = 0;
 
 vi.mock("@supabase/ssr", () => ({
   createServerClient: (
@@ -25,11 +27,16 @@ vi.mock("@supabase/ssr", () => ({
       cookies: { setAll: (c: typeof refreshedCookies) => void };
     },
   ) => ({
+    ...(() => {
+      createServerClientCalls++;
+      return {};
+    })(),
     auth: {
       // Mirrors real auth-js: an expired access token is transparently
       // refreshed inside getUser(), which rotates the refresh token and
       // pushes the new cookies through setAll() before resolving.
       getUser: async () => {
+        getUserCalls++;
         if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
         return { data: { user: mockUser } };
       },
@@ -45,6 +52,8 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   mockUser = null;
   refreshedCookies = [];
+  createServerClientCalls = 0;
+  getUserCalls = 0;
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -164,5 +173,35 @@ describe("middleware — retired Meta registration route", () => {
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "Unauthorized" });
+  });
+});
+
+describe("middleware — Evolution events cron exception", () => {
+  it("passes only the exact GET cron path without creating a Supabase client or calling getUser", async () => {
+    mockUser = null;
+
+    const res = await middleware(
+      new NextRequest("https://app.test/api/whatsapp/evolution/events/cron?ignored=query"),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+    expect(createServerClientCalls).toBe(0);
+    expect(getUserCalls).toBe(0);
+  });
+
+  it.each([
+    { method: "POST", path: "/api/whatsapp/evolution/events/cron" },
+    { method: "GET", path: "/api/whatsapp/evolution/events/cron/child" },
+    { method: "GET", path: "/api/whatsapp/evolution/events/cron-extra" },
+  ])("keeps $method $path behind the existing auth guard", async ({ method, path }) => {
+    mockUser = null;
+
+    const res = await middleware(new NextRequest(`https://app.test${path}`, { method }));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Unauthorized" });
+    expect(createServerClientCalls).toBe(1);
+    expect(getUserCalls).toBe(1);
   });
 });
