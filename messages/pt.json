@@ -550,7 +550,7 @@
   "Contacts": {
     "page": {
       "title": "Contatos",
-      "subtitle": "Gerencie sua lista de contatos. {count} contatos no total.",
+      "subtitle": "Gerencie sua lista de contatos. {count, plural, one {# contato no total.} other {# contatos no total.}}",
       "subtitleZero": "Gerencie sua lista de contatos.",
       "customFieldsBtn": "Campos personalizados",
       "selectAllOnPage": "Selecionar todos os contatos desta página",
