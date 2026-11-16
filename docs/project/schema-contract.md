@@ -206,6 +206,8 @@ Para que checkpoint e efeito de banco não fiquem em RPCs separados: `apply_evol
 
 O root único impede nova execução para o mesmo evento/definição; o step único impede repetir a mesma ação; envio remoto usa a reserva C5 e não retry cego. Após possível aceite remoto seguido de crash, tentativa fica `unknown` e step/root não reenviam. Só reconciliar por eco Evolution quando a correlação observada for suficiente, senão intervenção operacional. Os logs de automação e eventos de flow continuam auditoria e mantêm `user_id`; não viram fonte de unicidade por consulta JSON.
 
+Para um passo `condition` de automação, `evolution_dispatch_steps.result` guarda somente `{"branch":"yes"}` ou `{"branch":"no"}` após a avaliação. A decisão usa a configuração persistida da etapa e o contexto validado da root; `complete_evolution_dispatch_step` grava o resultado com o lease vigente. No replay de um passo concluído, o executor lê esse resultado persistido e nunca reavalia a condição. Os filhos são selecionados por `parent_step_id` igual ao ID da condição e `branch` igual à decisão; a raiz não recebe JSON de resultado. Este contrato de resultado é exclusivo de `condition` e não habilita `close_conversation`, webhook ou envio.
+
 ## Arquivos de adaptação e incompatibilidades
 
 Arquivos de produto previstos para os recortes de implementação posteriores (esta tarefa não os altera):
