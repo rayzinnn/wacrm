@@ -70,16 +70,21 @@ Schema T12 já presente:
   `20261116203606_t12_apply_evolution_automation_effect.sql`,
   `20261116210937_t12_apply_evolution_create_deal_effect.sql` e
   `20261116212357_t12_apply_evolution_assign_conversation_effect.sql` e
-  `20261116213942_t12_apply_evolution_wait_effect.sql`:
-  cobre tag, campo, negócio, atribuição a agente específico e espera
-  temporizada com efeito e checkpoint atômicos. Foi aplicada somente no banco
-  local. `wait_for_reply`, cadeia `tag_added`, retomada de esperas e execução do
-  engine continuam ausentes.
+  `20261116213942_t12_apply_evolution_wait_effect.sql` e
+  `20261116215135_t12_apply_evolution_wait_for_reply_effect.sql`:
+  cobre tag, campo, negócio, atribuição a agente específico, espera temporizada
+  e estacionamento de `wait_for_reply` interativo com efeito e checkpoint
+  atômicos. Foi aplicada somente no banco local. A retomada da resposta, a
+  cadeia `tag_added`, a retomada de esperas e a execução do motor continuam
+  ausentes. `interactive: false` impede ativar o caminho interativo.
 - `automation_pending_executions.evolution_dispatch_step_id`, FK e UNIQUE em
   `supabase/migrations/20261116213140_t12_automation_pending_dispatch_step_link.sql`:
   schema aplicado no banco local e testado com rollback. O cron legado já
   ignora linhas vinculadas ao Evolution. Ainda faltam a retomada idempotente e
-  o caminho `wait_for_reply`.
+  a associação de uma resposta Evolution à espera interativa.
+- `src/lib/automations/evolution-step-executor.ts`: módulo isolado que reserva
+  e aplica um passo local elegível com as RPCs fenced. Ainda não é chamado por
+  worker; não executa condição, envio nem cadeia derivada.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
@@ -207,7 +212,8 @@ Meta `wamid` como idempotency key.
    waits; worker avalia `condition` sem I/O e termina step com RPC fenced.
    **Estado:** RPC de tag/campo/negócio/atribuição específica e wait temporizado
    aplicada e testada no banco local; vínculo/UNIQUE da fila também aplicado.
-   **Lacunas:** execução do worker, `tag_added`, `wait_for_reply`, retomada da
+   O módulo de um passo local está testado, mas isolado.
+   **Lacunas:** execução do worker, `tag_added`, resposta a `wait_for_reply`, retomada da
    fila e contexto acumulado dos passos anteriores. **Teste:** rollback-only de
    tenant/FKs/allowed fields, replay da
    mesma wait e corrida de step/efeito. Excluir `close_conversation` até extensão
