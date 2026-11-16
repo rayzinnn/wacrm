@@ -1,6 +1,6 @@
 # Contrato Evolution local — estado parcial
 
-**Status: parcial (Infra.c/T03.b1).** Confirmado no serviço local Evolution API 2.3.7, ARM64, no bootstrap de criação/estado sem conexão. Este documento não declara webhook, QR, envio ou demais capacidades prontos.
+**Status: parcial (Infra.c/T03.c1).** Confirmado no serviço local Evolution API 2.3.7, ARM64. Bootstrap, geração de QR sem pareamento e entrega/retry de callback de conexão foram observados. Envio e ACK durável no Postgres do CRM continuam pendentes.
 
 ## Build local fixado
 
@@ -63,12 +63,23 @@ As fixtures vieram de chamadas HTTP locais reais neste boot. Removem credenciais
 - Política local para implementação futura: tratar QR como dado efêmero e descartar do estado/memória/UI local após no máximo 20 segundos, inclusive ao substituir por um QR novo ou sair do fluxo. Esse é um limite conservador do WACRM, ainda não implementado. A API Evolution não forneceu TTL remoto; não inferimos expiração no servidor.
 - Resposta bruta, estado posterior e estado anterior estão em `infra/evolution/private/`, ignorado e modo 0600; nunca são fixtures compartilháveis.
 
+## Webhook de conexão — observação local T03.c1
+
+- Uma instância temporária `wacrm-probe-*` foi criada pelo roteiro local com Baileys e `qrcode=false`; não foi pareada. Somente `CONNECTION_UPDATE` foi habilitado, com `byEvents=false`, `base64=false`, URL temporária por `host.lima.internal` e cabeçalhos próprios de correlação e segredo. O receptor ficou vinculado a `127.0.0.1` no host; o container Evolution alcançou seu healthcheck HTTP 204.
+- `GET /webhook/find/:instanceName` confirmou a configuração da probe. O callback real chegou como `event=connection.update`; envelope observado continha `event`, `instance`, `data`, `date_time`, `destination`, `server_url` e `apikey`. `data` continha `instance` (string), `state` (string) e `statusReason` (number). Valores de `apikey` e URLs foram redigidos/substituídos na fixture.
+- O `date_time` do envelope foi `2026-11-16T01:55:08.581Z`, enquanto o receptor registrou a primeira chegada em `2026-11-16T04:55:08.512Z`. A fonte fixada `cd800f2976e1e5b682fbf86a01ee4d85ae61f370` em `src/api/services/channel.service.ts` calcula `new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString()` antes de emitir `dateTime`; o container reportou `America/Sao_Paulo` e offset `180` minutos. Isso confirma que o `date_time` observado é hora de parede local serializada com sufixo `Z`, três horas atrás do relógio UTC do receptor; não é timestamp UTC confiável. Para normalizar eventos de conexão, usar `receivedAt` atribuído pelo servidor receptor como horário confiável e manter `date_time` apenas como dado de origem/diagnóstico.
+- O receptor rejeitou segredo incorreto e ID de conexão incorreto com HTTP 401, e instância divergente com HTTP 409. No callback real, a primeira tentativa recebeu HTTP 503; após 5.044 ms, o provedor repetiu os mesmos 353 bytes e recebeu HTTP 200. A igualdade foi verificada diretamente nos bytes em memória; os dois registros também tiveram SHA-256 igual. Não houve outro payload entre essas tentativas.
+- A chamada de connect da probe retornou HTTP 200; os bytes de resposta, que poderiam incluir material QR, foram descartados sem leitura/registro. Estado observado antes: `close`; depois: `connecting`. Nenhum aparelho foi pareado e nenhuma mensagem foi enviada.
+- Cleanup da probe: webhook desabilitado (HTTP 201), instância exata removida (HTTP 200), ausência confirmada no inventário. `wacrm-local` permaneceu `connecting` antes/depois; serviços locais mantiveram status/health/restart-count do snapshot.
+- Bruto do primeiro callback fica somente em `infra/evolution/private/T03.c1-*/callback-first-attempt.json`, diretório 0700 e arquivo 0600, ignorado pelo Git. Fixture sanitizada: `infra/evolution/fixtures/connection-update.observed.sanitized.json`; roteiro: `infra/evolution/verify-callback.py`.
+- Limite: isso verifica o formato do callback e o retry HTTP do Evolution 2.3.7. O HTTP 200 foi respondido pelo receptor de teste; não houve ingestão/ACK transacional ou persistência no Postgres do CRM. Não demonstra entrega de outros eventos, webhook de mensagem, mídia, recuperação após reinício nem funcionamento com dispositivo pareado.
+
 ## Ainda pendente
 
 - Pareamento humano e ciclo de conexão persistente; a observação apenas moveu o estado para `connecting`.
-- Eventos/webhook: nenhuma chamada de callback; envelope, autenticação e retries não foram testados no runtime deste Compose.
+- Outros eventos/webhook: somente `CONNECTION_UPDATE` foi testado. Envelope de mensagens, download de mídia e retries para outros eventos permanecem pendentes.
 - Mensagens: nenhum envio; nenhum identificador/response de texto ou mídia observado.
-- Logout e delete não foram chamados. A única chamada a connect está descrita acima; estado `connecting` não comprova conexão WhatsApp concluída.
+- Na instância principal, logout/delete não foram chamados. O connect e a remoção limitados às probes temporárias estão descritos acima; estado `connecting` não comprova conexão WhatsApp concluída.
 - O schema interno do CRM e correspondência provider-connection seguem para tarefa própria; este documento não fecha RPCs nem migrations do CRM.
 
 ## Fontes

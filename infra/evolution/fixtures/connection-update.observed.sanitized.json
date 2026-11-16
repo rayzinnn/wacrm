@@ -1,0 +1,78 @@
+{
+  "observation": {
+    "provider": "Evolution API 2.3.7",
+    "probe": "temporary Baileys instance; qrcode=false; not paired",
+    "configured_events": ["CONNECTION_UPDATE"],
+    "byEvents": false,
+    "base64": false,
+    "connect_http_status": 200,
+    "state_before": "close",
+    "state_after": "connecting",
+    "provider_date_time_semantics": "local wall-clock value serialized with Z at source commit cd800f2976e1e5b682fbf86a01ee4d85ae61f370; not a reliable UTC clock",
+    "connection_normalizer_time_source": "server receiver receivedAt",
+    "wrong_secret_http_status": 401,
+    "wrong_connection_http_status": 401,
+    "wrong_instance_http_status": 409,
+    "attempts": [
+      {
+        "received_at": "2026-11-16T04:55:08.512Z",
+        "provider_date_time": "2026-11-16T01:55:08.581Z",
+        "http_status": 503,
+        "body_bytes": 353,
+        "sha256": "290071a41a04d4693d019b54d2459e8f6234147cec3ad1a456ebeb4479f5adf0"
+      },
+      {
+        "received_at": "2026-11-16T04:55:13.556Z",
+        "provider_date_time": "2026-11-16T01:55:08.581Z",
+        "http_status": 200,
+        "body_bytes": 353,
+        "sha256": "290071a41a04d4693d019b54d2459e8f6234147cec3ad1a456ebeb4479f5adf0",
+        "byte_identical_to_first": true,
+        "interval_ms": 5044
+      }
+    ],
+    "distinct_payloads_between_attempts": 0,
+    "cleanup": {
+      "webhook_disable_http_status": 201,
+      "instance_delete_http_status": 200,
+      "probe_absent_after_cleanup": true,
+      "primary_instance_wacrm_local_status_before_after": "connecting",
+      "services_unchanged": true
+    }
+  },
+  "payload": {
+    "event": "connection.update",
+    "instance": "[PROBE]",
+    "data": {
+      "instance": "[PROBE]",
+      "state": "connecting",
+      "statusReason": 200
+    },
+    "date_time": "2026-11-16T01:55:08.581Z",
+    "destination": "[LOCAL_URL]",
+    "server_url": "[LOCAL_URL]",
+    "apikey": "[REDACTED]"
+  },
+  "envelope_fields_observed": [
+    "apikey",
+    "data",
+    "date_time",
+    "destination",
+    "event",
+    "instance",
+    "server_url"
+  ],
+  "data_field_types": {
+    "instance": "string",
+    "state": "string",
+    "statusReason": "number"
+  },
+  "custom_headers_configured_and_validated": [
+    "x-wacrm-connection",
+    "x-wacrm-webhook-secret"
+  ],
+  "limits": [
+    "ACK tested only at the temporary HTTP receiver; no CRM/Postgres persistence was involved",
+    "No device pairing or message send occurred"
+  ]
+}
