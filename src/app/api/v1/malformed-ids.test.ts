@@ -31,7 +31,6 @@ function req(method = 'GET', body?: unknown) {
 describe('v1 [id] routes with a non-UUID id', () => {
   it.each([
     ['GET conversations/{id}', () => getConversation(req(), params)],
-    ['GET broadcasts/{id}', () => getBroadcast(req(), params)],
     ['GET webhooks/{id}', () => getWebhook(req(), params)],
     [
       'PATCH webhooks/{id}',
@@ -43,5 +42,13 @@ describe('v1 [id] routes with a non-UUID id', () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error.code).toBe('not_found');
+  });
+
+  it('GET broadcasts/{id} returns 422 unsupported_capability even for a non-UUID id', async () => {
+    const res = await getBroadcast(req(), params);
+    expect(res.status).toBe(422);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    const body = await res.json();
+    expect(body.error.code).toBe('unsupported_capability');
   });
 });
