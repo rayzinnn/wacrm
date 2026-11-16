@@ -90,6 +90,10 @@ Schema T12 já presente:
   de iniciar o log. Conclui candidatos inelegíveis como `skipped` sem criar log
   parcial. Ainda falta o worker de lote e a origem confiável da flag de primeira
   mensagem.
+- `src/lib/automations/evolution-condition-executor.ts`: módulo isolado que
+  persiste a decisão `yes/no` em um step e lê o resultado no replay; texto vem
+  do evento inbound aplicado e consulta de etiqueta valida a conta. Ainda não
+  percorre filhos nem é chamado por worker.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
