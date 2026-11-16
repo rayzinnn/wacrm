@@ -1,4 +1,10 @@
+import { decrypt } from '@/lib/whatsapp/encryption'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { getEvolutionCapabilities, type EvolutionMediaKind } from './capabilities'
+import { EvolutionMediaError, resolveMedia } from './media'
+import type { EvolutionMediaRef } from './media'
+import { EvolutionMediaStorageError, stageEvolutionInboundMedia } from './media-storage'
+import type { EvolutionCredentials } from './types'
 
 export type EvolutionMessageWorkerCounts = {
   claimed: number
@@ -14,7 +20,18 @@ type ClaimedMessageEvent = {
   connection_id: string
   lease_token: string
   normalized_event: unknown
+  media_state?: unknown
 }
+
+type MediaConnectionRow = {
+  id: string
+  provider: string
+  base_url: string
+  instance_name: string
+  token_encrypted: string
+}
+
+const MEDIA_KINDS = new Set<EvolutionMediaKind>(['image', 'document', 'audio', 'video'])
 
 const CLAIM_LIMIT = 10
 const CLAIM_LEASE_SECONDS = 60
@@ -63,6 +80,74 @@ function applyFailure(error: unknown): { code: string; retryable: boolean } {
   return { code: 'database_unavailable', retryable: true }
 }
 
+function mediaFailure(error: unknown): { code: string; retryable: boolean } {
+  if (error instanceof EvolutionMediaStorageError) {
+    if (error.code === 'storage_unavailable' || error.code === 'stage_unavailable') {
+      return { code: 'media_storage_unavailable', retryable: true }
+    }
+    return { code: 'invalid_media_event', retryable: false }
+  }
+
+  if (error instanceof EvolutionMediaError) {
+    if (
+      error.code === 'timeout'
+      || error.code === 'network_error'
+      || error.httpStatus === 408
+      || error.httpStatus === 429
+      || (error.httpStatus !== null && error.httpStatus >= 500)
+    ) return { code: 'media_provider_unavailable', retryable: true }
+
+    return { code: 'invalid_media_event', retryable: false }
+  }
+
+  return { code: 'media_worker_error', retryable: true }
+}
+
+async function loadMediaCredentials(
+  db: ReturnType<typeof supabaseAdmin>,
+  event: ClaimedMessageEvent,
+): Promise<EvolutionCredentials> {
+  let lookup: { data: unknown; error: unknown }
+  try {
+    lookup = await db
+      .from('whatsapp_connections')
+      .select('id,provider,base_url,instance_name,token_encrypted')
+      .eq('id', event.connection_id)
+      .maybeSingle()
+  } catch {
+    throw new MediaWorkerFailure('database_unavailable', true)
+  }
+  if (lookup.error) throw new MediaWorkerFailure('database_unavailable', true)
+  if (!isRecord(lookup.data) || lookup.data.id !== event.connection_id) {
+    throw new MediaWorkerFailure('connection_unavailable', false)
+  }
+
+  const row = lookup.data as MediaConnectionRow
+  if (row.provider !== 'evolution') throw new MediaWorkerFailure('unsupported_provider', false)
+  if (
+    typeof row.base_url !== 'string'
+    || typeof row.instance_name !== 'string'
+    || row.instance_name.trim() === ''
+    || typeof row.token_encrypted !== 'string'
+    || row.token_encrypted.length === 0
+  ) throw new MediaWorkerFailure('credentials_unavailable', false)
+
+  try {
+    const token = decrypt(row.token_encrypted)
+    if (!token) throw new Error('empty token')
+    return { baseUrl: row.base_url, instanceId: row.instance_name, token }
+  } catch {
+    throw new MediaWorkerFailure('credentials_unavailable', false)
+  }
+}
+
+class MediaWorkerFailure extends Error {
+  constructor(readonly code: string, readonly retryable: boolean) {
+    super('Evolution media worker failed.')
+    this.name = 'MediaWorkerFailure'
+  }
+}
+
 async function persistFailure(
   db: ReturnType<typeof supabaseAdmin>,
   event: ClaimedMessageEvent,
@@ -95,6 +180,55 @@ async function processClaim(
     return persistFailure(db, event, 'unsupported_event_kind', false)
   }
 
+  const normalized = event.normalized_event
+  const contentType = normalized.contentType
+  if (contentType !== 'text') {
+    if (typeof contentType !== 'string' || !MEDIA_KINDS.has(contentType as EvolutionMediaKind)) {
+      return persistFailure(db, event, 'unsupported_media_kind', false)
+    }
+    if (!getEvolutionCapabilities().media.includes(contentType as EvolutionMediaKind)) {
+      return persistFailure(db, event, 'unsupported_media_kind', false)
+    }
+
+    if (event.media_state === 'stored') return applyClaim(db, event)
+    if (event.media_state !== 'pending') {
+      return persistFailure(db, event, 'invalid_media_event', false)
+    }
+
+    try {
+      if (normalized.text !== null || !isRecord(normalized.mediaRef)) {
+        return persistFailure(db, event, 'invalid_media_event', false)
+      }
+      const credentials = await loadMediaCredentials(db, event)
+      const media = await resolveMedia(credentials, normalized.mediaRef as unknown as EvolutionMediaRef)
+      if (media.contentType !== contentType) {
+        return persistFailure(db, event, 'invalid_media_event', false)
+      }
+      const stage = await stageEvolutionInboundMedia({
+        eventId: event.id,
+        leaseToken: event.lease_token,
+        media,
+      })
+      if (stage === 'stale') return 'stale'
+      if (stage === 'conflict') return persistFailure(db, event, 'media_storage_conflict', false)
+      return applyClaim(db, event)
+    } catch (error) {
+      if (isStaleError(error)) return 'stale'
+      if (error instanceof MediaWorkerFailure) {
+        return persistFailure(db, event, error.code, error.retryable)
+      }
+      const failure = mediaFailure(error)
+      return persistFailure(db, event, failure.code, failure.retryable)
+    }
+  }
+
+  return applyClaim(db, event)
+}
+
+async function applyClaim(
+  db: ReturnType<typeof supabaseAdmin>,
+  event: ClaimedMessageEvent,
+): Promise<WorkerOutcome> {
   let result: { data: unknown; error: unknown }
   try {
     result = await db.rpc('apply_evolution_event', {
