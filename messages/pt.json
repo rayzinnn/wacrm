@@ -2208,6 +2208,8 @@
       "provider": "Provedor",
       "model": "Modelo",
       "apiKey": "Chave de API",
+      "showApiKey": "Mostrar chave de API",
+      "hideApiKey": "Ocultar chave de API",
       "testKey": "Testar chave",
       "testSuccess": "A chave funciona — o provedor respondeu.",
       "testRejected": "O provedor rejeitou a solicitação.",

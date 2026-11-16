@@ -380,8 +380,9 @@ export function AiConfig({ onStatusChange }: AiConfigProps) {
                   <button
                     type="button"
                     onClick={() => setShowKey((s) => !s)}
-                    className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
-                    tabIndex={-1}
+                    aria-label={t(showKey ? 'hideApiKey' : 'showApiKey')}
+                    aria-pressed={showKey}
+                    className="text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring absolute top-1/2 right-2 -translate-y-1/2 rounded-sm"
                   >
                     {showKey ? (
                       <EyeOff className="h-4 w-4" />

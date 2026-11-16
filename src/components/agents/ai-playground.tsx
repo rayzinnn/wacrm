@@ -202,7 +202,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
             onKeyDown={handleKeyDown}
             placeholder={t('placeholder')}
             rows={1}
-            className="border-border bg-muted text-foreground placeholder-muted-foreground focus:border-primary/50 flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm outline-none"
+            className="border-border bg-muted text-foreground placeholder-muted-foreground focus-visible:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm outline-none"
             aria-label={t('placeholder')}
           />
           <Button

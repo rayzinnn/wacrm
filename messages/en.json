@@ -2208,6 +2208,8 @@
       "provider": "Provider",
       "model": "Model",
       "apiKey": "API key",
+      "showApiKey": "Show API key",
+      "hideApiKey": "Hide API key",
       "testKey": "Test key",
       "testSuccess": "Key works — the provider responded.",
       "testRejected": "The provider rejected the request.",
