@@ -20,6 +20,7 @@ import {
   addContactTags,
   ContactError,
   contactSearchFilter,
+  resolveAuditUserId,
 } from './contacts';
 
 describe('serializeContact', () => {
@@ -88,6 +89,61 @@ describe('findOrCreateContact', () => {
         findOrCreateContact(noopDb, 'acc', 'user', { phone })
       ).rejects.toMatchObject({ status: 400 });
     }
+  });
+});
+
+describe('resolveAuditUserId', () => {
+  function auditIdentityDb(ownerUserId: string | null) {
+    type Query = {
+      select: (columns: string) => Query;
+      eq: (column: string, value: string) => Query;
+      maybeSingle: () => Promise<{
+        data: { owner_user_id: string | null } | null;
+        error: null;
+      }>;
+    };
+    const tables: string[] = [];
+    const selections: string[] = [];
+    const filters: [string, string][] = [];
+    const query: Query = {
+      select: (columns) => {
+        selections.push(columns);
+        return query;
+      },
+      eq: (column, value) => {
+        filters.push([column, value]);
+        return query;
+      },
+      maybeSingle: async () => ({
+        data: ownerUserId ? { owner_user_id: ownerUserId } : null,
+        error: null,
+      }),
+    };
+    const db = {
+      from: (table: string) => {
+        tables.push(table);
+        return query;
+      },
+    } as unknown as SupabaseClient;
+    return { db, tables, selections, filters };
+  }
+
+  it('attributes API writes to the explicit owner of the account', async () => {
+    const { db, tables, selections, filters } = auditIdentityDb('owner-1');
+
+    await expect(resolveAuditUserId(db, 'account-1')).resolves.toBe('owner-1');
+    expect(tables).toEqual(['accounts']);
+    expect(selections).toEqual(['owner_user_id']);
+    expect(filters).toEqual([['id', 'account-1']]);
+  });
+
+  it('fails when the account has no owner instead of consulting provider config', async () => {
+    const { db, tables } = auditIdentityDb(null);
+
+    await expect(resolveAuditUserId(db, 'account-1')).rejects.toBeInstanceOf(
+      ContactError,
+    );
+    expect(tables).toEqual(['accounts']);
   });
 });
 
