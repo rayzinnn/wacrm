@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getTranslations } from 'next-intl/server';
 import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -18,6 +19,13 @@ import {
 const inter = Inter({
   variable: "--font-sans",
   subsets: ["latin"],
+});
+
+const manrope = localFont({
+  src: "./fonts/Manrope-Variable.woff2",
+  variable: "--font-manrope",
+  weight: "200 800",
+  display: "swap",
 });
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -97,7 +105,7 @@ export default async function RootLayout({
       lang={locale}
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
-      className={`${inter.variable} h-full antialiased`}
+      className={`${inter.variable} ${manrope.variable} h-full antialiased`}
       // The `theme-boot` script below rewrites `data-theme` and
       // `data-mode` on <html> from localStorage before React hydrates,
       // so for any non-default choice the client DOM intentionally

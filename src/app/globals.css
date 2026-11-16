@@ -229,6 +229,140 @@ html[data-theme="rose"] {
   --sidebar-ring: oklch(0.645 0.22 16);
 }
 
+/* ---- ACCENT: SIS Signal Desk (opt-in) ---- */
+
+html[data-theme="sis"][data-mode="light"] {
+  color-scheme: light;
+  --background: #f4f6f8;
+  --foreground: #111318;
+  --card: #ffffff;
+  --card-2: #edf0f3;
+  --card-foreground: #111318;
+  --popover: #ffffff;
+  --popover-foreground: #111318;
+  --secondary: #edf0f3;
+  --secondary-foreground: #111318;
+  --muted: #edf0f3;
+  --muted-foreground: #5e6673;
+  --accent: #e7eaf0;
+  --accent-foreground: #111318;
+  --destructive: #a91f37;
+  --border: #dde2e8;
+  --input: #c7cdd5;
+  --ring: #1d4ed8;
+  --chart-1: #3b4de8;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #111318;
+  --sidebar-accent: #e7eaf0;
+  --sidebar-accent-foreground: #111318;
+  --sidebar-border: #dde2e8;
+  --sidebar-ring: #1d4ed8;
+  --primary: #3b4de8;
+  --primary-foreground: #ffffff;
+  --primary-hover: #2f3fc8;
+  --primary-soft: #eef0ff;
+  --primary-soft-2: #dfe3ff;
+  --sidebar-primary: #3b4de8;
+  --sidebar-primary-foreground: #ffffff;
+  --status-good: #18794e;
+  --status-warning: #8a5a00;
+  --status-serious: #a94a00;
+  --status-critical: #a91f37;
+  --sis-raised: #ffffff;
+  --sis-text-tertiary: #5e6673;
+  --sis-border-strong: #c7cdd5;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+  --font-sans: var(--font-manrope), "Avenir Next", "Segoe UI", sans-serif;
+  --motion-instant: 90ms;
+  --motion-fast: 120ms;
+  --motion-base: 240ms;
+  --motion-panel: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html[data-theme="sis"][data-mode="dark"] {
+  color-scheme: dark;
+  --background: #0a0a0a;
+  --foreground: #f5f5f5;
+  --card: #121212;
+  --card-2: #1f1f1f;
+  --card-foreground: #f5f5f5;
+  --popover: #121212;
+  --popover-foreground: #f5f5f5;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #f5f5f5;
+  --muted: #1f1f1f;
+  --muted-foreground: #b8b8b8;
+  --accent: #292929;
+  --accent-foreground: #f5f5f5;
+  --destructive: #a91f37;
+  --border: #292929;
+  --input: #3b3b3b;
+  --ring: #d9d9d9;
+  --chart-1: #ededed;
+  --sidebar: #121212;
+  --sidebar-foreground: #f5f5f5;
+  --sidebar-accent: #292929;
+  --sidebar-accent-foreground: #f5f5f5;
+  --sidebar-border: #292929;
+  --sidebar-ring: #d9d9d9;
+  --primary: #ededed;
+  --primary-foreground: #111111;
+  --primary-hover: #ffffff;
+  --primary-soft: #242424;
+  --primary-soft-2: #292929;
+  --sidebar-primary: #ededed;
+  --sidebar-primary-foreground: #111111;
+  --status-good: #69d49e;
+  --status-warning: #e5bd69;
+  --status-serious: #ffb454;
+  --status-critical: #ff8585;
+  --sis-raised: #181818;
+  --sis-text-tertiary: #8f8f8f;
+  --sis-border-strong: #3b3b3b;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 28px;
+  --radius-4xl: 32px;
+  --font-sans: var(--font-manrope), "Avenir Next", "Segoe UI", sans-serif;
+  --motion-instant: 90ms;
+  --motion-fast: 120ms;
+  --motion-base: 240ms;
+  --motion-panel: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html[data-theme="sis"] body {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+html[data-theme="sis"] :is(input, select, textarea) {
+  font-family: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="sis"] *,
+  html[data-theme="sis"] *::before,
+  html[data-theme="sis"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
