@@ -85,6 +85,11 @@ Schema T12 já presente:
 - `src/lib/automations/evolution-step-executor.ts`: módulo isolado que reserva
   e aplica um passo local elegível com as RPCs fenced. Ainda não é chamado por
   worker; não executa condição, envio nem cadeia derivada.
+- `src/lib/automations/evolution-dispatch-preparer.ts`: módulo isolado que
+  confere a root reservada, o evento aplicado, a conta e a elegibilidade antes
+  de iniciar o log. Conclui candidatos inelegíveis como `skipped` sem criar log
+  parcial. Ainda falta o worker de lote e a origem confiável da flag de primeira
+  mensagem.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
@@ -204,7 +209,8 @@ Meta `wamid` como idempotency key.
    `start_evolution_event_dispatch` e fechar candidatas não elegíveis como
    `skipped`. Persistir `automation_logs` uma vez. **Estado:** RPC de início e
    claim exclusivo de automações aplicados/testados no banco local; faltam
-   worker e elegibilidade. O claim genérico não deve ser usado pelo worker de
+   worker de lote; a preparação/elegibilidade de uma root foi implementada
+   isoladamente. O claim genérico não deve ser usado pelo worker de
    automação. Testes SQL de início, concorrência e isolamento de engines já
    passaram.
 2. **Primitivas locais de automação.** Implementar/usar
