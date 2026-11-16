@@ -118,7 +118,7 @@ sequenciais, escreve resultados em `automation_logs`, agenda `wait`, estaciona
 | `create_deal` | Não transporte | RPC transacional; account/user derivados da root, validar pipeline/stage na conta. |
 | `assign_conversation`, `close_conversation` | Não transporte | Efeito local com checkpoint atômico; assignment valida membro. `close_conversation` ainda não está na lista contratada de operações RPC e exige decisão/extensão antes de execução. |
 | `wait`, `wait_for_reply` | Wait/reply | Persistir fila e marcar step na mesma transação. A linha existente em `automation_pending_executions` precisa de vínculo único por `evolution_dispatch_step_id`; reply deve referenciar evento Evolution e avançar só uma vez. |
-| `send_message` | Texto | Único tipo de envio de automação candidato ao Evolution text core, sempre com reserva `evolution-step:<step_uuid>` antes do transporte. |
+| `send_message` | Texto | Único tipo de envio de automação candidato ao Evolution text core, sempre com reserva `evolution-step:<ledger-step-id>` antes do transporte. |
 | `send_buttons`, `send_list` | Interativo bloqueado | Não executar nem converter em texto. Capacidades Evolution têm `interactive: false`. |
 | `send_template` | Template bloqueado | Não executar; `templates: false`, e dependência de template Meta não tem mapeamento Evolution. |
 | `send_webhook` | Não transporte externo | Fora do escopo e não torna o step seguro por idempotência. Adiar até política de destino, replay e efeitos externos. Não chamar URL do cliente no worker deste recorte. |
@@ -160,7 +160,8 @@ As alterações de schema T12 para `flow_run_events.evolution_event_id`,
 `flow_run_events_reply_event_key` e
 `flow_run_events_evolution_transition_key` descritos em
 `schema-contract.md` foram aplicadas no banco local e testadas com rollback.
-A RPC de transição ainda falta; não portar reply/advance para o worker antes dela.
+A RPC de transição também foi aplicada no banco local e testada; o worker de
+Flow e os nós ainda não foram ligados a ela.
 
 ### AI e handoff
 
@@ -229,7 +230,7 @@ Meta `wamid` como idempotency key.
    mesma wait e corrida de step/efeito. Excluir `close_conversation` até extensão
    aprovada; `send_webhook` permanece bloqueado.
 3. **Texto de automação.** Para apenas `send_message`, derivar chave do UUID
-   real do passo, claim step, reservar `evolution-step:<step_uuid>`, chamar
+   real do passo, claim step, reservar `evolution-step:<ledger-step-id>`, chamar
    adapter Evolution uma vez, persistir attempt id e conclusão fenced. Tratar
    `accepted`, `rejected`, `pending`/`unknown` sem POST repetido. **Teste:**
    mocks do adapter sem rede, SQL de reserva/replay e crash após reserva e após
@@ -237,8 +238,9 @@ Meta `wamid` como idempotency key.
 4. **Flow local e replies.** Implementar roots/run start e transições com
    `complete_evolution_flow_transition`, primeiro para `start`, `condition`,
    `set_tag` e `end`; só então receber `reply_received` com evento Evolution
-   deduplicado. **Lacuna:** RPC de transição ausente; colunas/índices T12 de
-   `flow_run_events` já aplicados no banco local. **Teste:** mesmo evento repetido, sequência
+   deduplicado. A RPC de transição e as colunas/índices T12 de
+   `flow_run_events` já foram aplicados no banco local; falta o worker/nós.
+   **Teste:** mesmo evento repetido, sequência
    esperada/stale, duas replies concorrentes, mudança terminal e lineage da
    conta. Não aceitar flows em andamento até testar a transição atômica.
 5. **Texto Flow e coleta de entrada.** Portar `send_message` e prompt de
@@ -286,8 +288,9 @@ Meta `wamid` como idempotency key.
 
 Ausentes no estado atual das migrations, embora descritos em
 `schema-contract.md`: retomada de `wait_for_reply`,
-`complete_evolution_flow_transition`, `claim_ai_reply_slot_for_dispatch` e
-`complete_evolution_ai_handoff`. O estacionamento de `wait_for_reply`, as
+`claim_ai_reply_slot_for_dispatch` e `complete_evolution_ai_handoff`.
+`complete_evolution_flow_transition` foi aplicada no banco local, mas ainda não
+é chamada por worker. O estacionamento de `wait_for_reply`, as
 colunas/índices Evolution de `flow_run_events` e o vínculo único da fila ao
 step foram aplicados no banco local. Confirmar cada item restante por migration/teste antes
 de qualquer worker integrar o caminho correspondente. `condition` e
