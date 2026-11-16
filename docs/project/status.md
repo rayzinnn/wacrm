@@ -34,8 +34,10 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T05.a2 | Concluído no cliente | `14c4423`; 37 testes, callback fixo e somente CONNECTION_UPDATE. Configuração da principal aguarda receptor durável. |
 | T05.b1 | Concluído para conexão | `e9f4c44`; 13 testes; chave estável no replay e occurredAt do receptor. Mensagens/status ainda não normalizados. |
 | T06.a2 | Concluído | `1a3bb91`; tabela evolution_events, isolamento SQL e deduplicação por conexão verificados, 59 migrations neste marco. RPCs/dispatch ainda pendentes. |
-| T08.a/b | Em andamento | Autenticação por segredo/correlação e enqueue durável em implementação; receptor ainda não ativado. |
-| T06.guard | Em verificação | Regressão de convite identificada: conta com conexão não deve ser apagada ao aceitar convite. Migration aditiva e teste SQL local em revisão. |
+| T08.a/b | Concluídos | Auth e4d1ccf (9 testes), enqueue 8b47826 (8 testes); sem segredo/payload bruto no evento. |
+| T08.c | Em fechamento | 14 testes e replay HTTP real com cinco requisições concorrentes/uma linha; evidence/T08.manual.md. Callback da principal ainda não ativado. |
+| T06.guard | Concluído | 23faf20; conta com conexão bloqueada ao aceitar convite, conta vazia aceita; testes TS e SQL rollback conferidos. 60 migrations neste marco. |
+| T09.c1 | Em andamento | SQL de claim/fail/conclusão de conexão, com fencing e isolamento; worker ainda não executado. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
 
