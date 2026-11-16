@@ -13,6 +13,9 @@ DECLARE
   v_atomic_id uuid;
   v_monotonic_id uuid;
   v_wrong_kind_id uuid;
+  v_kind_connection_id uuid;
+  v_exhausted_message_id uuid;
+  v_exhausted_message_token uuid := pg_catalog.gen_random_uuid();
   v_infinite_time_id uuid;
   v_invalid_state_id uuid;
   v_old_token uuid := pg_catalog.gen_random_uuid();
@@ -84,6 +87,22 @@ BEGIN
     (v_connection_id, 't09-infinite-time', '{"kind":"connection"}'::jsonb, 'pending', 0, 'infinity'::timestamptz),
     (v_connection_id, 't09-invalid-state', '{"kind":"connection"}'::jsonb, 'pending', 0, 'infinity'::timestamptz);
 
+  INSERT INTO public.evolution_events (
+    connection_id, event_key, normalized_event, state, attempts, next_attempt_at
+  ) VALUES (
+    v_connection_id, 't09-kind-connection', '{"kind":"connection"}'::jsonb,
+    'pending', 0, 'infinity'::timestamptz
+  ) RETURNING id INTO v_kind_connection_id;
+
+  INSERT INTO public.evolution_events (
+    connection_id, event_key, normalized_event, state, attempts,
+    lease_until, lease_token, next_attempt_at
+  ) VALUES (
+    v_connection_id, 't09-message-exhausted', '{"kind":"message"}'::jsonb,
+    'processing', 5, '-infinity'::timestamptz, v_exhausted_message_token,
+    'infinity'::timestamptz
+  ) RETURNING id INTO v_exhausted_message_id;
+
   SELECT pg_catalog.array_agg(e.id ORDER BY e.event_key) INTO v_batch_ids
     FROM public.evolution_events AS e
    WHERE e.connection_id = v_connection_id AND e.event_key LIKE 't09-batch-%';
@@ -109,6 +128,9 @@ BEGIN
   PERFORM pg_catalog.set_config('wacrm.t09c1.wrong_kind_id', v_wrong_kind_id::text, true);
   PERFORM pg_catalog.set_config('wacrm.t09c1.infinite_time_id', v_infinite_time_id::text, true);
   PERFORM pg_catalog.set_config('wacrm.t09c1.invalid_state_id', v_invalid_state_id::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t09c1.kind_connection_id', v_kind_connection_id::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t09c1.exhausted_message_id', v_exhausted_message_id::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t09c1.exhausted_message_token', v_exhausted_message_token::text, true);
 END;
 $fixture_setup$;
 
@@ -169,6 +191,9 @@ DECLARE
   v_atomic_id uuid := current_setting('wacrm.t09c1.atomic_id')::uuid;
   v_monotonic_id uuid := current_setting('wacrm.t09c1.monotonic_id')::uuid;
   v_wrong_kind_id uuid := current_setting('wacrm.t09c1.wrong_kind_id')::uuid;
+  v_kind_connection_id uuid := current_setting('wacrm.t09c1.kind_connection_id')::uuid;
+  v_exhausted_message_id uuid := current_setting('wacrm.t09c1.exhausted_message_id')::uuid;
+  v_exhausted_message_token uuid := current_setting('wacrm.t09c1.exhausted_message_token')::uuid;
   v_infinite_time_id uuid := current_setting('wacrm.t09c1.infinite_time_id')::uuid;
   v_invalid_state_id uuid := current_setting('wacrm.t09c1.invalid_state_id')::uuid;
   v_exhausted_ids uuid[] := current_setting('wacrm.t09c1.exhausted_ids')::uuid[];
@@ -230,7 +255,20 @@ BEGIN
      )
      OR (SELECT pg_catalog.count(*) FROM public.evolution_events AS e
           WHERE e.id = ANY(v_exhausted_ids) AND e.state = 'processing' AND e.lease_until <= pg_catalog.clock_timestamp()) <> 1 THEN
-    RAISE EXCEPTION 'expired fifth-lease cleanup was not limited to ten or returned an exhausted row';
+    RAISE EXCEPTION 'expired fifth-lease cleanup mismatch (failed %, claimed %, remaining %)',
+      (SELECT pg_catalog.count(*) FROM public.evolution_events AS e
+        WHERE e.id = ANY(v_exhausted_ids) AND e.state = 'failed' AND e.attempts = 5),
+      (SELECT pg_catalog.count(*) FROM public.evolution_events AS e
+        WHERE e.id = ANY(v_exhausted_ids) AND e.id = ANY(v_ids)),
+      (SELECT pg_catalog.count(*) FROM public.evolution_events AS e
+        WHERE e.id = ANY(v_exhausted_ids) AND e.state = 'processing' AND e.lease_until <= pg_catalog.clock_timestamp());
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.evolution_events AS e
+     WHERE e.id = v_exhausted_message_id AND e.state = 'processing' AND e.attempts = 5
+       AND e.lease_token = v_exhausted_message_token AND e.lease_until <= pg_catalog.clock_timestamp()
+  ) THEN
+    RAISE EXCEPTION 'connection worker exhausted cleanup changed a message event';
   END IF;
 
   -- The next call cleans the eleventh exhausted row and can then claim
@@ -389,15 +427,16 @@ BEGIN
   END IF;
 
   UPDATE public.evolution_events AS e SET next_attempt_at = '-infinity'::timestamptz WHERE e.id = v_wrong_kind_id;
-  SELECT * INTO STRICT v_event FROM public.claim_evolution_events(1, 30);
-  IF v_event.id <> v_wrong_kind_id THEN RAISE EXCEPTION 'wrong-kind fixture was not claimed'; END IF;
-  BEGIN
-    PERFORM outcome FROM public.complete_evolution_connection_event(
-      v_wrong_kind_id, v_event.lease_token, 'connected', pg_catalog.clock_timestamp()
-    );
-    RAISE EXCEPTION 'non-connection event was completed by connection RPC';
-  EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
-  END;
+  UPDATE public.evolution_events AS e SET next_attempt_at = '-infinity'::timestamptz WHERE e.id = v_kind_connection_id;
+  SELECT pg_catalog.array_agg(c.id), pg_catalog.count(*)::integer
+    INTO v_ids, v_count FROM public.claim_evolution_events(10, 30) AS c;
+  IF v_count <> 1 OR v_ids[1] <> v_kind_connection_id OR NOT EXISTS (
+    SELECT 1 FROM public.evolution_events AS e
+     WHERE e.id = v_wrong_kind_id AND e.state = 'pending' AND e.attempts = 0
+       AND e.lease_until IS NULL AND e.lease_token IS NULL
+  ) THEN
+    RAISE EXCEPTION 'connection worker claimed a message event or missed the eligible connection event';
+  END IF;
 
   UPDATE public.evolution_events AS e SET next_attempt_at = '-infinity'::timestamptz WHERE e.id = v_infinite_time_id;
   SELECT * INTO STRICT v_event FROM public.claim_evolution_events(1, 30);
