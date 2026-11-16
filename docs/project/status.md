@@ -19,7 +19,7 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T03.a | Levantamento concluído | `evolution-contract-research.md` e revisão do coordenador em `evolution-contract-review.md`; versão 2.3.7. Não equivale a servidor homologado. |
 | Infra.c / T03.b1 | Concluído | `evidence/Infra.c.md`; Evolution 2.3.7, Postgres e Redis fixados por digest ARM64, instância Baileys criada, estado close e auth negativa observados; commit `66674c5`. |
 | T03.b2 — QR | Concluído | `evidence/T03.b2.md`; HTTP 200 com PNG/data URL observado, estado close→connecting, nenhum pareamento/envio; commit `025f0fd`. |
-| T03.b/c — restante | Pendente | Validar callback, envio e mídia; fechar contrato/fixtures antes dos consumidores. Distinguir exemplos sintéticos de respostas observadas. |
+| T03.b/c — restante | Parcial | Callback de conexão e retry observados em T03.c1. Pareamento, envio e mídia permanecem pendentes; distinguir fixtures observadas de exemplos sintéticos. |
 | T04.a | Concluído | `transport-map.md`, `evidence/T04.a.md`; 69 caminhos classificados; commit `061ae29`. Revisão: rota Meta antiga 410 e callback Evolution separado. |
 | T04.b | Revisão documental concluída | `evidence/T04.b-review.md`; sete achados reconciliados em `9823e63`. RPCs futuras ainda exigem implementação e testes de banco. |
 | T04.c | Concluído | `evidence/T04.c.md`; 69 caminhos, zero sem classificação; milestone de sessão aprovado separadamente. |
@@ -30,9 +30,12 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T07.c | Concluído no milestone | Painel `a00a554`; i18n10/10, lint/typecheck; configuração e QR/descarte local verificados em `evidence/T07.manual.md`. Pareamento ainda pendente. |
 | T13.a1 | Concluído | `9c4fab2`; endpoints Meta antigos410, guard das rotas novas preservado; 28 testes e typecheck, HTTP real verificado. |
 | T13.a2a | Concluído | `f961388`; mutações de templates autenticadas422 sem Graph ou remoção de histórico; 16 testes e typecheck. |
-| T03.c1 | Em fechamento | Callback real de conexão e retry idêntico503→200 observados; cleanup da probe concluído. Conferir peculiaridade de timestamp antes do normalizador. |
-| T05.a2 | Em andamento | Cliente de configuração de webhook, sem ativação da principal antes do receptor durável. |
-| T06.a2 | Em andamento | Migration e teste da caixa de eventos, sem RPCs ou dispatch nesta etapa. |
+| T03.c1 | Concluído neste recorte | `ae435e2`; callback real autenticado e retry byte-idêntico503→200 em 5.044 ms, probe removida. Horário do provedor não é UTC confiável; usar recebimento do servidor. |
+| T05.a2 | Concluído no cliente | `14c4423`; 37 testes, callback fixo e somente CONNECTION_UPDATE. Configuração da principal aguarda receptor durável. |
+| T05.b1 | Concluído para conexão | `e9f4c44`; 13 testes; chave estável no replay e occurredAt do receptor. Mensagens/status ainda não normalizados. |
+| T06.a2 | Concluído | `1a3bb91`; tabela evolution_events, isolamento SQL e deduplicação por conexão verificados, 59 migrations neste marco. RPCs/dispatch ainda pendentes. |
+| T08.a/b | Em andamento | Autenticação por segredo/correlação e enqueue durável em implementação; receptor ainda não ativado. |
+| T06.guard | Em verificação | Regressão de convite identificada: conta com conexão não deve ser apagada ao aceitar convite. Migration aditiva e teste SQL local em revisão. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
 
@@ -49,4 +52,4 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 
 O usuário solicitou retomada após os agentes atingirem o limite de uso. Os mesmos três agentes LUNA foram reutilizados no Maestri, preservando as alterações parciais. Verificação fresca: nove containers ativos (oito com healthcheck saudável e REST ativo), CRM HTTP 307 para login, Evolution HTTP 200. Serviços e dados locais foram preservados.
 
-Próxima ação exata: concluir e revisar contrato do callback, cliente de webhook e caixa de eventos; implementar autenticação/receptor com ACK após persistência. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
+Próxima ação exata: concluir autenticação, enqueue e receptor com ACK após persistência; validar replay real antes de ativar o callback da principal e implementar o worker de conexão. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
