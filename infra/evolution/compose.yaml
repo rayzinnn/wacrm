@@ -2,7 +2,7 @@ name: wacrm-evolution
 
 services:
   evolution-api:
-    image: evoapicloud/evolution-api:v2.3.7@sha256:0e5d84f45b390e1d659500c9a98bfa2a53be28a341fbc0864966b77485f2a0c5
+    image: wacrm-evolution-api@sha256:6771f03b73f8810d5ee04d20403885b37a173b6d4017e901ef4f2e9ce159afd2
     container_name: wacrm-evolution-api
     restart: unless-stopped
     depends_on:
