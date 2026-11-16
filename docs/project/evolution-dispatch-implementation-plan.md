@@ -175,7 +175,8 @@ O log de uso/provider é efeito externo potencialmente cobrável e não é
 checkpoint do dispatch.
 
 - `ai` root só executa com slot de resposta adquirido uma única vez por root;
-  o contrato pede `claim_ai_reply_slot_for_dispatch`, ainda ausente.
+  `claim_ai_reply_slot_for_dispatch` foi aplicada no banco local e testada com
+  replay, limite, lease e isolamento por conta. O worker de IA ainda não a chama.
 - `reply` é a chave de step. Gerar resposta chama provider e pode cobrar mesmo
   se o processo cair antes de persistir resultado. Não há garantia de
   idempotência do provider nem armazenamento durável do texto gerado. Antes de
