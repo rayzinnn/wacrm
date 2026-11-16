@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getEvolutionCapabilities } from '@/lib/whatsapp/evolution/capabilities';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
@@ -446,7 +447,7 @@ export function ContactDetailView({
                   </div>
                 </div>
               </div>
-              <div className="mt-3">
+              {getEvolutionCapabilities().templates && <div className="mt-3">
                 <Button
                   size="sm"
                   onClick={() => setTemplatePickerOpen(true)}
@@ -460,7 +461,7 @@ export function ContactDetailView({
                   )}
                   {t('sendTemplateBtn')}
                 </Button>
-              </div>
+              </div>}
             </SheetHeader>
 
             {/* Tabs */}
@@ -769,11 +770,11 @@ export function ContactDetailView({
         )}
       </SheetContent>
     </Sheet>
-    <TemplatePicker
+    {getEvolutionCapabilities().templates && <TemplatePicker
       open={templatePickerOpen}
       onOpenChange={setTemplatePickerOpen}
       onSelect={handleSendTemplate}
-    />
+    />}
     </>
   );
 }

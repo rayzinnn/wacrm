@@ -117,6 +117,7 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T11e — worker de mídia | Concluído no código, capability desligada | 8746788; evento pendente resolve, valida tipo, guarda arquivo e aplica com lease; evento já armazenado aplica sem novo download. 32 testes focados e typecheck passaram; sem rede real. Capability `media: []` impede processamento real até QA. |
 | T11e — prévia sem texto | Concluído no código | e79a884; lista de conversas mostra rótulo neutro localizado quando há última mensagem sem prévia, como mídia inbound. Testes i18n, lint e typecheck passaram. |
 | T13.ui1 | Concluído | e4432c6; navegação e deep links bloqueados, 10 testes i18n/lint/typecheck e portal verificados. |
+| T13 — ação de modelo na ficha de contato | Concluído no código | Ficha deixa de mostrar botão e seletor de modelo quando `templates:false`; typecheck e lint sem erros passaram. Envios por modelo seguem indisponíveis. |
 | T14 — checks do marco | Concluídos neste recorte | evidence/T14.local-milestone.md: 174 arquivos/1.856 testes, lint 0 com 37 warnings, typecheck 0, build 0. Não conclui T14 da migração inteira. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
