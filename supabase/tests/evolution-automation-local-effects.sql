@@ -13,6 +13,10 @@ DECLARE
   v_tag_add uuid;
   v_tag_remove uuid;
   v_tag_b uuid;
+  v_pipeline_a uuid;
+  v_pipeline_b uuid;
+  v_stage_a uuid;
+  v_stage_b uuid;
   v_automation_a uuid;
   v_custom_field_a uuid;
   v_event_a uuid;
@@ -27,12 +31,16 @@ DECLARE
   v_action_foreign_tag uuid := pg_catalog.gen_random_uuid();
   v_action_expired uuid := pg_catalog.gen_random_uuid();
   v_action_stale_root uuid := pg_catalog.gen_random_uuid();
+  v_action_deal uuid := pg_catalog.gen_random_uuid();
+  v_action_foreign_deal uuid := pg_catalog.gen_random_uuid();
   v_step_add uuid := pg_catalog.gen_random_uuid();
   v_step_remove uuid := pg_catalog.gen_random_uuid();
   v_step_update uuid := pg_catalog.gen_random_uuid();
   v_step_foreign_tag uuid := pg_catalog.gen_random_uuid();
   v_step_expired uuid := pg_catalog.gen_random_uuid();
   v_step_stale_root uuid := pg_catalog.gen_random_uuid();
+  v_step_deal uuid := pg_catalog.gen_random_uuid();
+  v_step_foreign_deal uuid := pg_catalog.gen_random_uuid();
   v_root_token uuid := pg_catalog.gen_random_uuid();
   v_stale_root_token uuid := pg_catalog.gen_random_uuid();
   v_token_add uuid := pg_catalog.gen_random_uuid();
@@ -41,6 +49,8 @@ DECLARE
   v_token_foreign_tag uuid := pg_catalog.gen_random_uuid();
   v_token_expired uuid := pg_catalog.gen_random_uuid();
   v_token_stale_root uuid := pg_catalog.gen_random_uuid();
+  v_token_deal uuid := pg_catalog.gen_random_uuid();
+  v_token_foreign_deal uuid := pg_catalog.gen_random_uuid();
 BEGIN
   INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
                           raw_app_meta_data, raw_user_meta_data)
@@ -63,6 +73,15 @@ BEGIN
   INSERT INTO public.conversations (user_id, account_id, contact_id, status)
   VALUES (v_user_a, v_account_a, v_contact_a, 'open')
   RETURNING id INTO v_conversation_a;
+  UPDATE public.accounts SET default_currency = 'BRL' WHERE id = v_account_a;
+  INSERT INTO public.pipelines (user_id, account_id, name)
+  VALUES (v_user_a, v_account_a, 'T12 deal pipeline A') RETURNING id INTO v_pipeline_a;
+  INSERT INTO public.pipeline_stages (pipeline_id, name, position)
+  VALUES (v_pipeline_a, 'T12 deal stage A', 0) RETURNING id INTO v_stage_a;
+  INSERT INTO public.pipelines (user_id, account_id, name)
+  VALUES (v_user_b, v_account_b, 'T12 deal pipeline B') RETURNING id INTO v_pipeline_b;
+  INSERT INTO public.pipeline_stages (pipeline_id, name, position)
+  VALUES (v_pipeline_b, 'T12 deal stage B', 0) RETURNING id INTO v_stage_b;
   INSERT INTO public.tags (user_id, account_id, name)
   VALUES (v_user_a, v_account_a, 'T12 add tag') RETURNING id INTO v_tag_add;
   INSERT INTO public.tags (user_id, account_id, name)
@@ -136,7 +155,11 @@ BEGIN
     (v_action_update, v_automation_a, 'update_contact_field', '{"field":"name","value":"interpolated"}'::jsonb, 2),
     (v_action_foreign_tag, v_automation_a, 'add_tag', pg_catalog.jsonb_build_object('tag_id', v_tag_b), 3),
     (v_action_expired, v_automation_a, 'add_tag', pg_catalog.jsonb_build_object('tag_id', v_tag_add), 4),
-    (v_action_stale_root, v_automation_a, 'update_contact_field', '{"field":"name","value":"stale"}'::jsonb, 5);
+    (v_action_stale_root, v_automation_a, 'update_contact_field', '{"field":"name","value":"stale"}'::jsonb, 5),
+    (v_action_deal, v_automation_a, 'create_deal', pg_catalog.jsonb_build_object(
+      'pipeline_id',v_pipeline_a,'stage_id',v_stage_a,'title','{{contact.name}} opportunity','value',1250.50), 6),
+    (v_action_foreign_deal, v_automation_a, 'create_deal', pg_catalog.jsonb_build_object(
+      'pipeline_id',v_pipeline_b,'stage_id',v_stage_b,'title','Foreign pipeline','value',1), 7);
 
   INSERT INTO public.evolution_dispatch_steps (id, dispatch_id, action_key, state, attempts,
       lease_until, lease_token, request_id)
@@ -146,9 +169,12 @@ BEGIN
     (v_step_update, v_dispatch_a, v_action_update::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_update, 'evolution-step:' || v_step_update::text),
     (v_step_foreign_tag, v_dispatch_a, v_action_foreign_tag::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_foreign_tag, 'evolution-step:' || v_step_foreign_tag::text),
     (v_step_expired, v_dispatch_a, v_action_expired::text, 'processing', 1, pg_catalog.clock_timestamp() - interval '1 second', v_token_expired, 'evolution-step:' || v_step_expired::text),
-    (v_step_stale_root, v_dispatch_stale, v_action_stale_root::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_stale_root, 'evolution-step:' || v_step_stale_root::text);
+    (v_step_stale_root, v_dispatch_stale, v_action_stale_root::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_stale_root, 'evolution-step:' || v_step_stale_root::text),
+    (v_step_deal, v_dispatch_a, v_action_deal::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_deal, 'evolution-step:' || v_step_deal::text),
+    (v_step_foreign_deal, v_dispatch_a, v_action_foreign_deal::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_foreign_deal, 'evolution-step:' || v_step_foreign_deal::text);
 
   PERFORM pg_catalog.set_config('wacrm.t12effect.user_a', v_user_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.account_a', v_account_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.dispatch', v_dispatch_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.dispatch_stale', v_dispatch_stale::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.root_token', v_root_token::text, true);
@@ -158,17 +184,25 @@ BEGIN
   PERFORM pg_catalog.set_config('wacrm.t12effect.step_foreign_tag', v_step_foreign_tag::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.step_expired', v_step_expired::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.step_stale_root', v_step_stale_root::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.step_deal', v_step_deal::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.step_foreign_deal', v_step_foreign_deal::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_add', v_token_add::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_remove', v_token_remove::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_update', v_token_update::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_foreign_tag', v_token_foreign_tag::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_expired', v_token_expired::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_stale_root', v_token_stale_root::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.token_deal', v_token_deal::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.token_foreign_deal', v_token_foreign_deal::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.action_add', v_action_add::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.tag_add', v_tag_add::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.tag_remove', v_tag_remove::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.tag_b', v_tag_b::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.contact_a', v_contact_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.pipeline_a', v_pipeline_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.stage_a', v_stage_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.pipeline_b', v_pipeline_b::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.stage_b', v_stage_b::text, true);
 END;
 $fixture_setup$;
 
@@ -240,6 +274,20 @@ BEGIN
     RAISE EXCEPTION 'stale calls changed the absent add_tag relation';
   END IF;
 
+  BEGIN
+    PERFORM * FROM public.apply_evolution_automation_effect(
+      v_dispatch, v_root_token,
+      current_setting('wacrm.t12effect.step_deal')::uuid,
+      current_setting('wacrm.t12effect.token_deal')::uuid,
+      'create_deal', pg_catalog.jsonb_build_object(
+        'contact_id',current_setting('wacrm.t12effect.contact_a')::uuid,
+        'pipeline_id',current_setting('wacrm.t12effect.pipeline_a')::uuid,
+        'stage_id',current_setting('wacrm.t12effect.stage_a')::uuid,
+        'title','Synthetic opportunity','value',1250.50,'currency','BRL','status','won'));
+    RAISE EXCEPTION 'automation create_deal accepted a non-open deal';
+  EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+  END;
+
   SELECT * INTO STRICT v_result FROM public.apply_evolution_automation_effect(
     v_dispatch, v_root_token, v_step, v_token, 'add_tag',
     pg_catalog.jsonb_build_object(
@@ -293,6 +341,70 @@ BEGIN
      OR (SELECT c.name FROM public.contacts AS c
           WHERE c.id = current_setting('wacrm.t12effect.contact_a')::uuid) <> 'After' THEN
     RAISE EXCEPTION 'update_contact_field did not apply';
+  END IF;
+
+  SELECT * INTO STRICT v_result FROM public.apply_evolution_automation_effect(
+    v_dispatch, v_root_token,
+    current_setting('wacrm.t12effect.step_deal')::uuid,
+    current_setting('wacrm.t12effect.token_deal')::uuid,
+    'create_deal', pg_catalog.jsonb_build_object(
+      'contact_id',current_setting('wacrm.t12effect.contact_a')::uuid,
+      'pipeline_id',current_setting('wacrm.t12effect.pipeline_a')::uuid,
+      'stage_id',current_setting('wacrm.t12effect.stage_a')::uuid,
+      'title','Synthetic opportunity','value',1250.50,'currency','BRL','status','open'));
+  IF v_result.state <> 'done'
+     OR v_result.result->>'deal_id' IS NULL
+     OR NOT EXISTS (
+       SELECT 1 FROM public.deals d
+        WHERE d.id=(v_result.result->>'deal_id')::uuid
+          AND d.account_id=current_setting('wacrm.t12effect.account_a')::uuid
+          AND d.user_id=current_setting('wacrm.t12effect.user_a')::uuid
+          AND d.contact_id=current_setting('wacrm.t12effect.contact_a')::uuid
+          AND d.pipeline_id=current_setting('wacrm.t12effect.pipeline_a')::uuid
+          AND d.stage_id=current_setting('wacrm.t12effect.stage_a')::uuid
+          AND d.title='Synthetic opportunity' AND d.value=1250.50
+          AND d.currency='BRL' AND d.status='open')
+     OR (SELECT s.state FROM public.evolution_dispatch_steps s
+          WHERE s.id=current_setting('wacrm.t12effect.step_deal')::uuid) <> 'done' THEN
+    RAISE EXCEPTION 'create_deal did not persist tenant-scoped deal and checkpoint atomically';
+  END IF;
+  BEGIN
+    PERFORM * FROM public.apply_evolution_automation_effect(
+      v_dispatch,v_root_token,
+      current_setting('wacrm.t12effect.step_deal')::uuid,
+      current_setting('wacrm.t12effect.token_deal')::uuid,
+      'create_deal', pg_catalog.jsonb_build_object(
+        'contact_id',current_setting('wacrm.t12effect.contact_a')::uuid,
+        'pipeline_id',current_setting('wacrm.t12effect.pipeline_a')::uuid,
+        'stage_id',current_setting('wacrm.t12effect.stage_a')::uuid,
+        'title','Synthetic opportunity','value',1250.50,'currency','BRL','status','open'));
+    RAISE EXCEPTION 'completed create_deal action replayed';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+  IF (SELECT count(*) FROM public.deals
+       WHERE account_id=(SELECT account_id FROM public.profiles
+                         WHERE user_id=current_setting('wacrm.t12effect.user_a')::uuid)
+         AND title='Synthetic opportunity') <> 1 THEN
+    RAISE EXCEPTION 'create_deal replay inserted another deal';
+  END IF;
+
+  BEGIN
+    PERFORM * FROM public.apply_evolution_automation_effect(
+      v_dispatch,v_root_token,
+      current_setting('wacrm.t12effect.step_foreign_deal')::uuid,
+      current_setting('wacrm.t12effect.token_foreign_deal')::uuid,
+      'create_deal', pg_catalog.jsonb_build_object(
+        'contact_id',current_setting('wacrm.t12effect.contact_a')::uuid,
+        'pipeline_id',current_setting('wacrm.t12effect.pipeline_b')::uuid,
+        'stage_id',current_setting('wacrm.t12effect.stage_b')::uuid,
+        'title','Foreign tenant deal','value',1,'currency','USD','status','open'));
+    RAISE EXCEPTION 'cross-tenant create_deal was accepted';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+  IF EXISTS (SELECT 1 FROM public.deals WHERE title='Foreign tenant deal')
+     OR (SELECT s.state FROM public.evolution_dispatch_steps s
+          WHERE s.id=current_setting('wacrm.t12effect.step_foreign_deal')::uuid) <> 'processing' THEN
+    RAISE EXCEPTION 'cross-tenant create_deal changed data or checkpoint';
   END IF;
 
   BEGIN
