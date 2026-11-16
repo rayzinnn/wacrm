@@ -17,6 +17,7 @@ const h = vi.hoisted(() => {
     connections: {} as Record<string, unknown>,
     loadConnection: vi.fn(),
     saveSessionState: vi.fn(),
+    configureWebhook: vi.fn(),
     connectSession: vi.fn(),
     getSession: vi.fn(),
     MockEvolutionStoreError,
@@ -52,6 +53,7 @@ vi.mock('@/lib/whatsapp/evolution/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/whatsapp/evolution/client')>()
   return {
     ...actual,
+    configureWebhook: h.configureWebhook,
     connectSession: h.connectSession,
     getSession: h.getSession,
   }
@@ -81,7 +83,7 @@ function storedConnection(accountId: string) {
 }
 
 function request(body?: unknown) {
-  return new Request('http://wacrm.test/api/whatsapp/evolution/connect?accountId=account-A&token=query-token', {
+  return new Request('http://wacrm.test/api/whatsapp/evolution/connect?accountId=account-A&token=query-token&callbackUrl=https%3A%2F%2Fquery.invalid%2Fwebhook&webhookSecret=query-secret', {
     method: 'POST',
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
@@ -92,6 +94,7 @@ async function responseBody(response: Response) {
 }
 
 beforeEach(() => {
+  vi.stubEnv('EVOLUTION_WEBHOOK_BASE_URL', 'https://callbacks.wacrm.test')
   h.role = 'admin'
   h.accountId = 'account-A'
   h.sessionPresent = true
@@ -102,6 +105,7 @@ beforeEach(() => {
   }
   h.loadConnection.mockReset().mockImplementation(async (accountId: string) => h.connections[accountId] ?? null)
   h.saveSessionState.mockReset().mockResolvedValue(undefined)
+  h.configureWebhook.mockReset().mockResolvedValue(undefined)
   h.connectSession.mockReset().mockResolvedValue({
     state: 'connecting',
     qr: { dataUrl: pngDataUrl, expiresAt: '2026-11-16T13:00:20.000Z' },
@@ -110,7 +114,10 @@ beforeEach(() => {
   h.getSession.mockReset()
 })
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+})
 
 describe('POST /api/whatsapp/evolution/connect', () => {
   it('requires admin before loading a connection or calling Evolution', async () => {
@@ -121,6 +128,7 @@ describe('POST /api/whatsapp/evolution/connect', () => {
       expect(response.status).toBe(403)
       expect(response.headers.get('Cache-Control')).toBe('no-store')
       expect(h.loadConnection).not.toHaveBeenCalled()
+      expect(h.configureWebhook).not.toHaveBeenCalled()
       expect(h.connectSession).not.toHaveBeenCalled()
     }
     expect(h.roleCalls).toEqual(['admin', 'admin'])
@@ -134,6 +142,7 @@ describe('POST /api/whatsapp/evolution/connect', () => {
     expect(response.status).toBe(401)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(h.loadConnection).not.toHaveBeenCalled()
+    expect(h.configureWebhook).not.toHaveBeenCalled()
     expect(h.connectSession).not.toHaveBeenCalled()
   })
 
@@ -144,11 +153,21 @@ describe('POST /api/whatsapp/evolution/connect', () => {
       instanceId: 'forged-instance',
       token: 'forged-body-token',
       baseUrl: 'https://attacker.invalid',
+      callbackUrl: 'https://body.invalid/api/whatsapp/evolution/webhook',
+      webhookSecret: 'forged-body-webhook-secret',
+      webhookBaseUrl: 'https://body.invalid',
     }))
 
     expect(response.status).toBe(200)
     expect(h.loadConnection).toHaveBeenCalledExactlyOnceWith('account-B')
+    expect(h.configureWebhook).toHaveBeenCalledExactlyOnceWith(
+      storedConnection('account-B').credentials,
+      'https://callbacks.wacrm.test/api/whatsapp/evolution/webhook',
+      'stored-webhook-secret-account-B',
+      'connection-account-B',
+    )
     expect(h.connectSession).toHaveBeenCalledExactlyOnceWith(storedConnection('account-B').credentials)
+    expect(h.configureWebhook.mock.invocationCallOrder[0]).toBeLessThan(h.connectSession.mock.invocationCallOrder[0])
     const body = await responseBody(response)
     expect(body).toMatchObject({ state: 'connecting', qr: { dataUrl: pngDataUrl } })
     const wire = JSON.stringify(body)
@@ -165,6 +184,28 @@ describe('POST /api/whatsapp/evolution/connect', () => {
     expect(response.status).toBe(409)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
     expect(await responseBody(response)).toMatchObject({ error: 'connection_not_configured' })
+    expect(h.connectSession).not.toHaveBeenCalled()
+    expect(h.saveSessionState).not.toHaveBeenCalled()
+    expect(h.configureWebhook).not.toHaveBeenCalled()
+  })
+
+  it('does not request a QR when webhook configuration fails and keeps the sanitized ambiguous error', async () => {
+    h.configureWebhook.mockRejectedValueOnce(
+      new EvolutionError('timeout', 'private webhook config response', { ambiguous: true }),
+    )
+
+    const response = await POST(request())
+    const body = await responseBody(response)
+
+    expect(response.status).toBe(504)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(body).toEqual({
+      error: 'Evolution request timed out.',
+      code: 'evolution_timeout',
+      ambiguous: true,
+    })
+    expect(JSON.stringify(body)).not.toContain('private webhook config response')
+    expect(h.configureWebhook).toHaveBeenCalledOnce()
     expect(h.connectSession).not.toHaveBeenCalled()
     expect(h.saveSessionState).not.toHaveBeenCalled()
   })
@@ -203,6 +244,23 @@ describe('POST /api/whatsapp/evolution/connect', () => {
     expect(h.saveSessionState.mock.calls[0][0]).toBe('account-A')
     expect(h.saveSessionState.mock.calls[0][1].state).toBe('unknown')
     expect(Date.parse(h.saveSessionState.mock.calls[0][1].checkedAt)).not.toBeNaN()
+  })
+
+  it('stores unknown on connect network failure after webhook configuration', async () => {
+    h.connectSession.mockRejectedValue(new EvolutionError('network_error', 'private provider network detail', {
+      ambiguous: true,
+    }))
+
+    const response = await POST(request())
+    const body = await responseBody(response)
+
+    expect(response.status).toBe(502)
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+    expect(body).toMatchObject({ error: 'Evolution network is unavailable.', code: 'evolution_network_error', ambiguous: true })
+    expect(JSON.stringify(body)).not.toContain('private provider network detail')
+    expect(h.configureWebhook).toHaveBeenCalledOnce()
+    expect(h.saveSessionState).toHaveBeenCalledOnce()
+    expect(h.saveSessionState.mock.calls[0][1].state).toBe('unknown')
   })
 
   it('maps provider unauthorized without leaking the credential error', async () => {
