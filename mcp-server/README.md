@@ -7,7 +7,7 @@ and others) drive your CRM in natural language:
 
 > "How many conversations are still open?"
 > "Find the contact for +1 415 555 0123 and show the last few messages."
-> "Draft and send an order-update template to Jane."
+> "Send a text message to Jane."
 
 It's a thin wrapper over wacrm's public [`/api/v1`](../docs/public-api.md)
 REST API. All auth, scoping, and rate limiting are enforced by your
@@ -77,7 +77,7 @@ when their guard is set.
 | `get_conversation`   | read      | `conversations:read` | Read one conversation                           |
 | `list_messages`      | read      | `messages:read`      | List a conversation's messages                  |
 | `get_broadcast`      | read      | `broadcasts:send`    | Poll a broadcast's delivery status              |
-| `send_message`       | write     | `messages:send`      | Send a WhatsApp message (text/template/media)   |
+| `send_message`       | write     | `messages:send`      | Send text only with caller-supplied `idempotency_key` |
 | `create_contact`     | write     | `contacts:write`     | Create (find-or-create) a contact               |
 | `update_contact`     | write     | `contacts:write`     | Update a contact / replace its tags             |
 | `send_broadcast`     | broadcast | `broadcasts:send`    | Launch a template broadcast (requires `confirm`)|
@@ -94,7 +94,11 @@ the server layers three guards:
    still enforces the key's scopes. A call without the right scope
    returns a clean `forbidden` error. Issue a read-only key for a
    read-only assistant.
-3. **Explicit broadcast confirmation.** `send_broadcast` refuses to run
+3. **Stable send identity.** `send_message` requires the caller to pass
+   an `idempotency_key`. Reuse the exact key when retrying the same action
+   after an uncertain outcome; the MCP client never creates or rotates it.
+   Template, media, and reply fields are not exposed by this tool.
+4. **Explicit broadcast confirmation.** `send_broadcast` refuses to run
    unless called with `confirm: true`, and is marked `destructive` so
    compliant clients prompt the user first.
 

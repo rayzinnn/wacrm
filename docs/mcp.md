@@ -6,7 +6,7 @@ Claude Code, Cursor, and any other MCP client — in natural language:
 
 > "How many conversations are still open today?"
 > "Show the last five messages with +1 415 555 0123."
-> "Send the `order_update` template to that contact."
+> "Send a text message to that contact."
 
 It lives in [`mcp-server/`](../mcp-server) and is published to npm as
 [`wacrm-mcp`](https://www.npmjs.com/package/wacrm-mcp). Under the hood
@@ -44,7 +44,7 @@ data or send messages, add `"WACRM_ENABLE_WRITES": "true"` (and
 
 - **Reads (always on):** `whoami`, contacts (list/get), conversations
   (list/get), messages (list), broadcast status.
-- **Writes (opt-in):** send a message, create/update a contact.
+- **Writes (opt-in):** send text with a caller-supplied stable `idempotency_key`, create/update a contact. Templates, media, and replies are not exposed by `send_message`.
 - **Broadcasts (opt-in):** launch a template broadcast — requires an
   explicit `confirm` and is marked destructive.
 

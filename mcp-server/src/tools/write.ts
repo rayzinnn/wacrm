@@ -12,16 +12,21 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { WacrmClient } from '../client.js';
 import { handle, jsonResult } from './shared.js';
 
-const templateSchema = z
+export const sendTextMessageSchema = z
   .object({
-    name: z.string().describe('Meta-approved template name.'),
-    language: z.string().describe('Template language code, e.g. "en_US".'),
-    params: z
-      .array(z.string())
-      .optional()
-      .describe('Positional body variables, in order.'),
+    to: z.string().describe('Recipient phone number in E.164 format, e.g. +14155550123.'),
+    text: z.string().min(1).describe('Free-form text message body.'),
+    idempotency_key: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((key) => key.trim().length > 0, 'Must not be blank.')
+      .describe(
+        'Stable caller-provided key for this send action. Reuse the exact same value if retrying after an uncertain result; do not create a new key for a retry.',
+      ),
   })
-  .describe('Template payload — required when type is "template".');
+  .strict()
+  .describe('Text-only WhatsApp send. Template, media, and reply fields are unsupported.');
 
 export function registerWriteTools(server: McpServer, client: WacrmClient): void {
   server.registerTool(
@@ -29,32 +34,15 @@ export function registerWriteTools(server: McpServer, client: WacrmClient): void
     {
       title: 'Send WhatsApp message',
       description:
-        'Send a WhatsApp message to a phone number (E.164, e.g. +14155550123). The contact and conversation are found-or-created automatically. Use type "text" for a free-form message (only valid inside the 24-hour customer-service window), or "template" to send an approved template (required to open a new conversation). Media types (image/video/document/audio) require a media_url. This sends a real message to a real person — confirm the recipient and content with the user before calling.',
-      inputSchema: {
-        to: z.string().describe('Recipient phone number in E.164 format, e.g. +14155550123.'),
-        type: z
-          .enum(['text', 'template', 'image', 'video', 'document', 'audio'])
-          .default('text')
-          .describe('Message type. Defaults to "text".'),
-        text: z
-          .string()
-          .optional()
-          .describe('Message body for "text", or the caption for a media type.'),
-        media_url: z
-          .string()
-          .url()
-          .optional()
-          .describe('Publicly reachable URL of the media file (required for media types).'),
-        filename: z.string().optional().describe('File name for a "document" send.'),
-        template: templateSchema.optional(),
-        reply_to_message_id: z
-          .string()
-          .optional()
-          .describe('Optional id of a message in the same conversation to reply to.'),
-      },
+        'Send a free-form text WhatsApp message to an E.164 phone number. The contact and conversation are found-or-created automatically by the API. Supply an idempotency_key that remains stable for this send action; if the outcome is uncertain, retry only with the same key. Template, media, and reply sends are not available through this tool. This sends a real message to a real person; confirm the recipient and content with the user before calling.',
+      inputSchema: sendTextMessageSchema,
       annotations: { title: 'Send WhatsApp message', readOnlyHint: false, openWorldHint: true },
     },
-    handle(async (args) => jsonResult(await client.sendMessage(args))),
+    handle(async ({ to, text, idempotency_key }) =>
+      jsonResult(
+        await client.sendMessage({ to, type: 'text', text }, idempotency_key),
+      ),
+    ),
   );
 
   server.registerTool(

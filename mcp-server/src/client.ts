@@ -39,7 +39,11 @@ export class WacrmClient {
   private async request<T>(
     method: string,
     path: string,
-    options: { query?: Record<string, string | number | undefined>; body?: unknown } = {},
+    options: {
+      query?: Record<string, string | number | undefined>;
+      body?: unknown;
+      idempotencyKey?: string;
+    } = {},
   ): Promise<{ data: T; meta?: { next_cursor: string | null } }> {
     const url = new URL(`${this.baseUrl}/api/v1${path}`);
     if (options.query) {
@@ -56,6 +60,9 @@ export class WacrmClient {
     };
     if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';
+    }
+    if (options.idempotencyKey !== undefined) {
+      headers['Idempotency-Key'] = options.idempotencyKey;
     }
 
     let res: Response;
@@ -118,8 +125,11 @@ export class WacrmClient {
 
   // --- Messages -----------------------------------------------------
 
-  sendMessage(body: unknown): Promise<{ data: unknown }> {
-    return this.request('POST', '/messages', { body });
+  sendMessage(
+    body: { to: string; type: 'text'; text: string },
+    idempotencyKey: string,
+  ): Promise<{ data: unknown }> {
+    return this.request('POST', '/messages', { body, idempotencyKey });
   }
 
   // --- Contacts -----------------------------------------------------
