@@ -61,6 +61,7 @@ import {
   templateNamesInMessages,
 } from "@/lib/whatsapp/template-message-view";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { getEvolutionCapabilities } from "@/lib/whatsapp/evolution/capabilities";
 import { resolveAssignmentResult } from "@/lib/inbox/assignment";
 import {
   businessReactionOn,
@@ -73,6 +74,17 @@ import {
   isTempMessage,
   newTempMessageId,
 } from "@/lib/inbox/optimistic-messages";
+import {
+  canQueueInboxTextSend,
+  createInboxTextSendOperation,
+  getInboxTextOperationStatus,
+  loadInboxTextSendOperations,
+  postInboxTextOnce,
+  removeInboxTextSendOperation,
+  saveInboxTextSendOperation,
+  toOptimisticTextMessage,
+  type InboxTextSendOperation,
+} from "./text-send-operation";
 
 const MESSAGE_PAGE_SIZE = 200;
 
@@ -194,6 +206,9 @@ export function MessageThread({
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
+  const textSendingEnabled = getEvolutionCapabilities().text;
+  const [pendingTextOperations, setPendingTextOperations] = useState<InboxTextSendOperation[]>([]);
+  const recoveredTextOperationsRef = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const [olderPages, setOlderPages] = useState<{
@@ -573,61 +588,139 @@ export function MessageThread({
     el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const handleSend = useCallback(
-    async (text: string, replyToId?: string) => {
-      if (!conversation) return;
+  const forgetTextOperation = useCallback((requestId: string) => {
+    removeInboxTextSendOperation(requestId);
+    setPendingTextOperations((current) =>
+      current.filter((operation) => operation.requestId !== requestId)
+    );
+  }, []);
 
-      const tempId = newTempMessageId();
+  const rememberTextOperation = useCallback(
+    (operation: InboxTextSendOperation) => {
+      saveInboxTextSendOperation(operation);
+      setPendingTextOperations((current) => [
+        ...current.filter((item) => item.requestId !== operation.requestId),
+        operation,
+      ]);
+    },
+    []
+  );
 
-      // Optimistic update — shows the message immediately with "sending" status
-      const optimisticMsg: Message = {
-        id: tempId,
-        conversation_id: conversation.id,
-        sender_type: "agent",
-        content_type: "text",
-        content_text: text,
-        status: "sending",
-        created_at: new Date().toISOString(),
-        reply_to_message_id: replyToId,
-      };
-      onNewMessage(optimisticMsg);
-      setReplyTo(null);
-
+  const reconcileTextOperation = useCallback(
+    async (operation: InboxTextSendOperation) => {
       try {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: "text",
-            content_text: text,
-            reply_to_message_id: replyToId,
-          }),
-        });
-
-        const payload = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          const reason = payload?.error || `HTTP ${res.status}`;
-          console.error("Failed to send message:", reason);
-          toast.error(t("sendFailed", { reason }));
-          // Mark the optimistic bubble as failed so the user sees what happened
-          onUpdateMessage(tempId, { status: "failed" });
+        const status = await getInboxTextOperationStatus(operation.requestId);
+        if (status.state === "accepted") {
+          forgetTextOperation(operation.requestId);
+          onUpdateMessage(operation.tempMessageId, {
+            id: status.messageRowId,
+            status: "sent",
+          });
           return;
         }
-
-        // Success — the realtime INSERT event will replace the temp bubble
-        // with the real DB row. If realtime hasn't arrived yet, at least
-        // flip status to 'sent' so the UI stops showing "sending".
-        onUpdateMessage(tempId, confirmedSendUpdate(payload));
-      } catch (err) {
-        console.error("Failed to send message:", err);
-        const reason = err instanceof Error ? err.message : t("networkError");
-        toast.error(t("sendFailed", { reason }));
-        onUpdateMessage(tempId, { status: "failed" });
+        if (status.state === "rejected") {
+          forgetTextOperation(operation.requestId);
+          onUpdateMessage(operation.tempMessageId, { status: "failed" });
+          return;
+        }
+        rememberTextOperation({ ...operation, state: status.state });
+      } catch {
+        rememberTextOperation({ ...operation, state: "unknown" });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage, t]
+    [forgetTextOperation, onUpdateMessage, rememberTextOperation]
+  );
+
+  const submitTextOperation = useCallback(
+    async (operation: InboxTextSendOperation) => {
+      const result = await postInboxTextOnce(operation);
+      if (result.kind === "accepted") {
+        forgetTextOperation(operation.requestId);
+        onUpdateMessage(operation.tempMessageId, {
+          id: result.messageId,
+          status: "sent",
+        });
+        return;
+      }
+      if (result.kind === "rejected") {
+        forgetTextOperation(operation.requestId);
+        onUpdateMessage(operation.tempMessageId, { status: "failed" });
+        toast.error(
+          operation.replyToId
+            ? t("replySendUnsupported")
+            : t("sendFailed", { reason: result.reason })
+        );
+        return;
+      }
+
+      const unresolved = { ...operation, state: "unknown" as const };
+      rememberTextOperation(unresolved);
+      await reconcileTextOperation(unresolved);
+    },
+    [forgetTextOperation, onUpdateMessage, reconcileTextOperation, rememberTextOperation, t]
+  );
+
+  useEffect(() => {
+    if (!conversationId) return;
+    const operations = loadInboxTextSendOperations().filter(
+      (operation) => operation.conversationId === conversationId
+    );
+    setPendingTextOperations((current) =>
+      current.length === operations.length &&
+      current.every(
+        (operation, index) =>
+          operation.requestId === operations[index].requestId &&
+          operation.state === operations[index].state
+      )
+        ? current
+        : operations
+    );
+    for (const operation of operations) {
+      if (recoveredTextOperationsRef.current.has(operation.requestId)) continue;
+      recoveredTextOperationsRef.current.add(operation.requestId);
+      onNewMessage(toOptimisticTextMessage(operation));
+      void reconcileTextOperation(operation);
+    }
+  }, [conversationId, onNewMessage, reconcileTextOperation]);
+
+  const handleSend = useCallback(
+    (text: string, replyToId?: string): boolean => {
+      if (!conversation) return false;
+      if (
+        !canQueueInboxTextSend(textSendingEnabled, false, Boolean(replyToId))
+      ) {
+        if (replyToId) toast.error(t("replySendUnsupported"));
+        return false;
+      }
+
+      const outstanding = loadInboxTextSendOperations().filter(
+        (operation) => operation.conversationId === conversation.id
+      );
+      if (!canQueueInboxTextSend(textSendingEnabled, outstanding.length > 0)) {
+        setPendingTextOperations(outstanding);
+        return false;
+      }
+
+      const tempId = newTempMessageId();
+      const operation = createInboxTextSendOperation(
+        conversation.id,
+        text,
+        tempId,
+        undefined,
+        undefined
+      );
+      if (!saveInboxTextSendOperation(operation)) {
+        toast.error(t("sendStorageUnavailable"));
+        return false;
+      }
+
+      setPendingTextOperations([operation]);
+      onNewMessage(toOptimisticTextMessage(operation));
+      setReplyTo(null);
+      void submitTextOperation(operation);
+      return true;
+    },
+    [conversation, onNewMessage, submitTextOperation, t, textSendingEnabled]
   );
 
   const handleSendMedia = useCallback(
@@ -1295,11 +1388,45 @@ export function MessageThread({
         }}
       />
 
+      {pendingTextOperations.map((operation) => (
+        <div
+          key={operation.requestId}
+          className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
+        >
+          <p
+            id={`text-send-operation-status-${operation.tempMessageId}`}
+            role="status"
+            aria-live="polite"
+            className="text-sm text-foreground"
+          >
+            {t("operationStatus", {
+              status:
+                operation.state === "unknown"
+                  ? t("unknown")
+                  : t("statusPending"),
+            })}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-describedby={`text-send-operation-status-${operation.tempMessageId}`}
+            onClick={() => void reconcileTextOperation(operation)}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+            {t("refresh")}
+          </Button>
+        </div>
+      ))}
+
       {/* Composer */}
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}
+        textSendingEnabled={textSendingEnabled}
+        textOperationPending={pendingTextOperations.length > 0}
+        textOperationStatusId={pendingTextOperations[0] ? `text-send-operation-status-${pendingTextOperations[0].tempMessageId}` : undefined}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}
         onOpenTemplates={handleOpenTemplates}

@@ -55,6 +55,7 @@ import {
 import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
+import { canQueueInboxTextSend } from "./text-send-operation";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -112,7 +113,10 @@ interface MediaDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
-  onSend: (text: string, replyToId?: string) => void;
+  onSend: (text: string, replyToId?: string) => boolean | void;
+  textSendingEnabled: boolean;
+  textOperationPending: boolean;
+  textOperationStatusId?: string;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
   onOpenTemplates: () => void;
@@ -135,6 +139,9 @@ export function MessageComposer({
   conversationId,
   sessionExpired,
   onSend,
+  textSendingEnabled,
+  textOperationPending,
+  textOperationStatusId,
   onSendMedia,
   onSendInteractive,
   onOpenTemplates,
@@ -237,11 +244,16 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired) return;
+    if (
+      !trimmed ||
+      sending ||
+      sessionExpired ||
+      !canQueueInboxTextSend(textSendingEnabled, textOperationPending)
+    ) return;
 
     setSending(true);
     try {
-      onSend(trimmed, replyTo?.id);
+      if (onSend(trimmed, replyTo?.id) === false) return;
       setText("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -249,7 +261,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+  }, [text, sending, sessionExpired, textSendingEnabled, textOperationPending, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -774,9 +786,10 @@ export function MessageComposer({
 
           <GatedButton
             size="sm"
-            canAct={!readOnly}
+            canAct={!readOnly && textSendingEnabled}
             gateReason={tGate("reasons.sendMessages")}
-            disabled={!text.trim() || sessionExpired || sending}
+            disabled={!text.trim() || sessionExpired || sending || !canQueueInboxTextSend(textSendingEnabled, textOperationPending)}
+            aria-describedby={textOperationPending ? textOperationStatusId : !textSendingEnabled ? "text-send-capability-status" : undefined}
             onClick={handleSend}
             className="order-1 h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40 sm:order-3"
           >
@@ -791,6 +804,15 @@ export function MessageComposer({
       {!draft && !recording && (
         <p className="mt-1 pl-1 text-[10px] text-muted-foreground sm:pl-[5.5rem]">
           {t("draftHint")}
+        </p>
+      )}
+      {!textSendingEnabled && !draft && !recording && (
+        <p
+          id="text-send-capability-status"
+          role="status"
+          className="mt-1 pl-1 text-xs text-muted-foreground sm:pl-[5.5rem]"
+        >
+          {t("textSendingUnavailable")}
         </p>
       )}
 
