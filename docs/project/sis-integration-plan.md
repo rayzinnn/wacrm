@@ -1,6 +1,6 @@
 # Plano de reconstrução visual WACRM + SIS
 
-Versão 1 — 16/11/2026. Estado: planejamento pronto para execução por fases; nenhuma implementação visual foi feita nesta tarefa. Raiz de execução: `/Users/raymozer/Desktop/Projetos/WACRM`.
+Versão 1 — 16/11/2026. Estado: F1–F7 implementadas no recorte visual; F8 segue em QA parcial. O progresso e os limites atuais estão em [`status.md`](status.md), nas linhas SIS F1–F8. Raiz de execução: `/Users/raymozer/Desktop/Projetos/WACRM`.
 
 ## 1. Resultado e limites
 
