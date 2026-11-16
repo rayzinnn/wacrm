@@ -77,7 +77,7 @@ function SignupPageInner() {
       : "/dashboard";
     const emailRedirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -91,6 +91,14 @@ function SignupPageInner() {
     if (error) {
       setError(error.message);
       setLoading(false);
+      return;
+    }
+
+    if (data.session) {
+      // A client session is already available (for example, when local
+      // Supabase email confirmations are disabled). Use a full navigation
+      // so middleware receives the session cookies on the protected route.
+      window.location.href = next;
       return;
     }
 
