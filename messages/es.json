@@ -359,6 +359,7 @@
       "clearAll": "Limpiar todo",
       "noConversations": "No se encontraron conversaciones",
       "noMessagesYet": "Aún no hay mensajes",
+      "messageWithoutPreview": "Mensaje",
       "unknown": "Desconocido"
     },
     "messageThread": {
