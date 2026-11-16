@@ -35,7 +35,9 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T05.b1 | Concluído para conexão | `e9f4c44`; 13 testes; chave estável no replay e occurredAt do receptor. Mensagens/status ainda não normalizados. |
 | T06.a2 | Concluído | `1a3bb91`; tabela evolution_events, isolamento SQL e deduplicação por conexão verificados, 59 migrations neste marco. RPCs/dispatch ainda pendentes. |
 | T08.a/b | Concluídos | Auth e4d1ccf (9 testes), enqueue 8b47826 (8 testes); sem segredo/payload bruto no evento. |
-| T08.c | Em fechamento | 14 testes e replay HTTP real com cinco requisições concorrentes/uma linha; evidence/T08.manual.md. Callback da principal ainda não ativado. |
+| T08.c | Concluído para conexão | 478ad63; 14 testes e replay HTTP real com cinco requisições concorrentes/uma linha; evidence/T08.manual.md. |
+| T07.b2 / callback principal | Concluído | 2d7f9b5; 26 testes; configuração verificada na Evolution e callback real durável em evidence/T08.activation.md. Sem pareamento. |
+| T13.a2b | Concluído | 8133675; reação e broadcast/resume autenticam e retornam 422/no-store sem I/O de negócio/transporte; 9 testes. |
 | T06.guard | Concluído | 23faf20; conta com conexão bloqueada ao aceitar convite, conta vazia aceita; testes TS e SQL rollback conferidos. 60 migrations neste marco. |
 | T09.c1 | Em andamento | SQL de claim/fail/conclusão de conexão, com fencing e isolamento; worker ainda não executado. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
@@ -54,4 +56,4 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 
 O usuário solicitou retomada após os agentes atingirem o limite de uso. Os mesmos três agentes LUNA foram reutilizados no Maestri, preservando as alterações parciais. Verificação fresca: nove containers ativos (oito com healthcheck saudável e REST ativo), CRM HTTP 307 para login, Evolution HTTP 200. Serviços e dados locais foram preservados.
 
-Próxima ação exata: concluir autenticação, enqueue e receptor com ACK após persistência; validar replay real antes de ativar o callback da principal e implementar o worker de conexão. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
+Próxima ação exata: concluir e verificar SQL de leases, worker e executor local de conexão; processar o callback real da principal e demonstrar recuperação sem duplicação. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.

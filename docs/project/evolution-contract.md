@@ -82,6 +82,12 @@ As fixtures vieram de chamadas HTTP locais reais neste boot. Removem credenciais
 - A identidade é `sha256:` + SHA-256 de JSON com campos e ordem fixos `{event, instance, state, providerTime: date_time}`. Ela não inclui `receivedAt`, `apikey`, `destination` ou `server_url`; portanto replay do callback mantém a mesma `eventKey`. O `date_time` do provedor contribui somente para identidade e nunca é convertido/corrigido como relógio. Usar o `receivedAt` do receptor como horário normalizado de conexão conforme a fonte/runtime observados em T03.c1.
 - Evidência e testes literais: `docs/project/evidence/T05.b1.md` e `src/lib/whatsapp/evolution/events.test.ts`, usando `infra/evolution/fixtures/connection-update.observed.sanitized.json`.
 
+## Callback principal integrado — T08
+
+Após a validação de T08.a/b/c, a rota connect configura o webhook com a credencial restrita e o segredo independente do registro. A verificação real do coordenador confirmou a configuração por GET /webhook/find e um callback da principal persistido em evolution_events, somente com kind/eventKey/occurredAt. Evidências: evidence/T08.manual.md e evidence/T08.activation.md. O receptor só retorna 200 para evento conhecido após await da escrita; erro de banco retorna 503 (caso testado com double). Somente CONNECTION_UPDATE está habilitado. O descarte local de QR em 20 s já foi implementado e verificado no painel em T07.manual; isso não é TTL remoto.
+
+O callback da principal está ativo. Seu processamento por worker ainda está em implementação neste marco. Não há pareamento nem mensagens homologadas.
+
 ## Ainda pendente
 
 - Pareamento humano e ciclo de conexão persistente; a observação apenas moveu o estado para `connecting`.
