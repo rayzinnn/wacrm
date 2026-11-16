@@ -94,6 +94,11 @@ Schema T12 já presente:
   persiste a decisão `yes/no` em um step e lê o resultado no replay; texto vem
   do evento inbound aplicado e consulta de etiqueta valida a conta. Ainda não
   percorre filhos nem é chamado por worker.
+- `src/lib/automations/evolution-send-message-executor.ts`: módulo isolado para
+  `send_message` com chave de reserva derivada do ledger e transporte Evolution.
+  Quando a claim do passo não autoriza execução, não chama o adapter. Ainda
+  falta distinguir em SQL uma lease ativa de outro worker de uma lease nova de
+  recuperação após queda; o módulo não está ligado ao worker.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
