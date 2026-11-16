@@ -21,7 +21,7 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T03.a | Levantamento concluído | `evolution-contract-research.md` e revisão do coordenador em `evolution-contract-review.md`; versão 2.3.7. Não equivale a servidor homologado. |
 | Infra.c / T03.b1 | Concluído | `evidence/Infra.c.md`; Evolution 2.3.7, Postgres e Redis fixados por digest ARM64, instância Baileys criada, estado close e auth negativa observados; commit `66674c5`. |
 | T03.b2 — QR | Concluído | `evidence/T03.b2.md`; HTTP 200 com PNG/data URL observado, estado close→connecting, nenhum pareamento/envio; commit `025f0fd`. |
-| T03.b/c — restante | Parcial | Callback de conexão e retry observados em T03.c1. Pareamento, envio e mídia permanecem pendentes; distinguir fixtures observadas de exemplos sintéticos. |
+| T03.b/c — restante | Parcial | Callback e retry em T03.c1; operador confirmou pareamento e status real conectado. Texto observado em T03.e1; status de entrega e mídia permanecem pendentes. |
 | T04.a | Concluído | `transport-map.md`, `evidence/T04.a.md`; 69 caminhos classificados; commit `061ae29`. Revisão: rota Meta antiga 410 e callback Evolution separado. |
 | T04.b | Revisão documental concluída | `evidence/T04.b-review.md`; sete achados reconciliados em `9823e63`. RPCs futuras ainda exigem implementação e testes de banco. |
 | T04.c | Concluído | `evidence/T04.c.md`; 69 caminhos, zero sem classificação; milestone de sessão aprovado separadamente. |
@@ -29,7 +29,7 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T06.a1 | Concluído | `evidence/T06.a1.md`; migration real `20261116040603_whatsapp_connections.sql`, isolamento SQL aprovado; commit `ac5ec8f`. |
 | T06.b1 | Concluído | `evidence/T06.b1.md`; 17 testes e typecheck, store revisado; commit `b9f3fb9`. |
 | T07.a/b | Concluídos | Config `d5911bc` (25 testes), connect/status `ab5bcd8` (31 testes), typecheck; HTTP real e DTOs verificados pelo coordenador. |
-| T07.c | Concluído no milestone | Painel `a00a554`; i18n10/10, lint/typecheck; configuração e QR/descarte local verificados em `evidence/T07.manual.md`. Pareamento ainda pendente. |
+| T07.c | Concluído no milestone | Painel `a00a554`; i18n10/10, lint/typecheck; configuração e QR/descarte local em `evidence/T07.manual.md`; pareamento posteriormente confirmado pelo operador e status conectado. |
 | T13.a1 | Concluído | `9c4fab2`; endpoints Meta antigos410, guard das rotas novas preservado; 28 testes e typecheck, HTTP real verificado. |
 | T13.a2a | Concluído | `f961388`; mutações de templates autenticadas422 sem Graph ou remoção de histórico; 16 testes e typecheck. |
 | T03.c1 | Concluído neste recorte | `ae435e2`; callback real autenticado e retry byte-idêntico503→200 em 5.044 ms, probe removida. Horário do provedor não é UTC confiável; usar recebimento do servidor. |
@@ -45,7 +45,9 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T07.d | Concluído | 6f7f9ef e4d03e40; health/overview/chip usam DTO Evolution, falha de leitura mostra desconhecido. Dashboard verificado no portal. |
 | T13.a2c | Concluído | 75dc961; launch/status broadcast V1 retornam422 após autenticação/scopes, sem I/O de negócio. |
 | T06.a3 | Concluído | 2b40adf; tabela de tentativas + guarda de convite, SQL rollback e 6 testes da cobertura de convite. 62 migrations; RPC/transporte ainda pendentes. |
-| T03.d1 | Concluído documental | 9df1cc9; contrato texto/eventos em fonte fixada. Não equivale a resposta observada nem habilita envio. |
+| T03.d1 | Concluído documental | 9df1cc9; contrato texto/eventos em fonte fixada; observação posterior em T03.e1. |
+| T06.a4 | Concluído | 1b28fd6; namespace por conexão e guard server-side contra vínculo entre contas, SQL e testes focados verificados. |
+| T03.e1 | Observação parcial aprovada | 3136e31; único POST201 e callback send.message com mesmo ID; inbound textual do JID verificado, sem marcador de reply; messages.update ausente. Fixtures mínimas revisadas. Não habilita envio no CRM. |
 | T13.ui1 | Concluído | e4432c6; navegação e deep links bloqueados, 10 testes i18n/lint/typecheck e portal verificados. |
 | T14 — checks do marco | Concluídos neste recorte | evidence/T14.local-milestone.md: 174 arquivos/1.856 testes, lint 0 com 37 warnings, typecheck 0, build 0. Não conclui T14 da migração inteira. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
@@ -58,10 +60,10 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 - Supabase do CRM e banco Evolution são locais e separados. Nenhum projeto Supabase remoto foi alterado. Sem push ou deploy.
 - `.env.local` permanece ignorada e fora dos commits. Não imprimir tokens, chaves, QR ou respostas brutas sensíveis.
 - Ruling T01: preservar o blank-at-EOF histórico dos planos para manter seus hashes; exceção documentada no check de whitespace.
-- Nenhuma sessão WhatsApp vinculada ou mensagem enviada até este registro. QR e teste real dependem do operador.
+- Sessão WhatsApp vinculada pelo operador. T03.e1 fez uma única mensagem autorizada; não repetir essa prova. Aceite HTTP não comprova entrega; envio pelo CRM e persistência de mensagens ainda estão em implementação.
 
 ## Retomada em 16/11/2026
 
 O usuário solicitou retomada após os agentes atingirem o limite de uso. Os mesmos três agentes LUNA foram reutilizados no Maestri, preservando as alterações parciais. Verificação fresca: nove containers ativos (oito com healthcheck saudável e REST ativo), CRM HTTP 307 para login, Evolution HTTP 200. Serviços e dados locais foram preservados.
 
-Próxima ação exata: fechar persistência de tentativas e bloqueios de UI; obter pareamento/número de homologação para observar contratos de mensagens e avançar transporte de texto. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
+Próxima ação exata: revisar concorrência das RPCs de tentativa e concluir cliente de texto e normalizador inbound, antes de integrar domínio e interface. O usuário confirmou pareamento e forneceu o número de homologação; GET status retornou200/connected. T03.e1 observa uma única mensagem autorizada, sem publicar o telefone em documentação versionada. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
