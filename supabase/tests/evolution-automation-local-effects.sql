@@ -33,6 +33,9 @@ DECLARE
   v_action_stale_root uuid := pg_catalog.gen_random_uuid();
   v_action_deal uuid := pg_catalog.gen_random_uuid();
   v_action_foreign_deal uuid := pg_catalog.gen_random_uuid();
+  v_action_assignment uuid := pg_catalog.gen_random_uuid();
+  v_action_foreign_assignment uuid := pg_catalog.gen_random_uuid();
+  v_action_round_robin uuid := pg_catalog.gen_random_uuid();
   v_step_add uuid := pg_catalog.gen_random_uuid();
   v_step_remove uuid := pg_catalog.gen_random_uuid();
   v_step_update uuid := pg_catalog.gen_random_uuid();
@@ -41,6 +44,9 @@ DECLARE
   v_step_stale_root uuid := pg_catalog.gen_random_uuid();
   v_step_deal uuid := pg_catalog.gen_random_uuid();
   v_step_foreign_deal uuid := pg_catalog.gen_random_uuid();
+  v_step_assignment uuid := pg_catalog.gen_random_uuid();
+  v_step_foreign_assignment uuid := pg_catalog.gen_random_uuid();
+  v_step_round_robin uuid := pg_catalog.gen_random_uuid();
   v_root_token uuid := pg_catalog.gen_random_uuid();
   v_stale_root_token uuid := pg_catalog.gen_random_uuid();
   v_token_add uuid := pg_catalog.gen_random_uuid();
@@ -51,6 +57,9 @@ DECLARE
   v_token_stale_root uuid := pg_catalog.gen_random_uuid();
   v_token_deal uuid := pg_catalog.gen_random_uuid();
   v_token_foreign_deal uuid := pg_catalog.gen_random_uuid();
+  v_token_assignment uuid := pg_catalog.gen_random_uuid();
+  v_token_foreign_assignment uuid := pg_catalog.gen_random_uuid();
+  v_token_round_robin uuid := pg_catalog.gen_random_uuid();
 BEGIN
   INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
                           raw_app_meta_data, raw_user_meta_data)
@@ -159,7 +168,13 @@ BEGIN
     (v_action_deal, v_automation_a, 'create_deal', pg_catalog.jsonb_build_object(
       'pipeline_id',v_pipeline_a,'stage_id',v_stage_a,'title','{{contact.name}} opportunity','value',1250.50), 6),
     (v_action_foreign_deal, v_automation_a, 'create_deal', pg_catalog.jsonb_build_object(
-      'pipeline_id',v_pipeline_b,'stage_id',v_stage_b,'title','Foreign pipeline','value',1), 7);
+      'pipeline_id',v_pipeline_b,'stage_id',v_stage_b,'title','Foreign pipeline','value',1), 7),
+    (v_action_assignment, v_automation_a, 'assign_conversation', pg_catalog.jsonb_build_object(
+      'mode','specific','agent_id',v_user_a), 8),
+    (v_action_foreign_assignment, v_automation_a, 'assign_conversation', pg_catalog.jsonb_build_object(
+      'mode','specific','agent_id',v_user_b), 9),
+    (v_action_round_robin, v_automation_a, 'assign_conversation',
+      '{"mode":"round_robin"}'::jsonb, 10);
 
   INSERT INTO public.evolution_dispatch_steps (id, dispatch_id, action_key, state, attempts,
       lease_until, lease_token, request_id)
@@ -171,9 +186,13 @@ BEGIN
     (v_step_expired, v_dispatch_a, v_action_expired::text, 'processing', 1, pg_catalog.clock_timestamp() - interval '1 second', v_token_expired, 'evolution-step:' || v_step_expired::text),
     (v_step_stale_root, v_dispatch_stale, v_action_stale_root::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_stale_root, 'evolution-step:' || v_step_stale_root::text),
     (v_step_deal, v_dispatch_a, v_action_deal::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_deal, 'evolution-step:' || v_step_deal::text),
-    (v_step_foreign_deal, v_dispatch_a, v_action_foreign_deal::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_foreign_deal, 'evolution-step:' || v_step_foreign_deal::text);
+    (v_step_foreign_deal, v_dispatch_a, v_action_foreign_deal::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_foreign_deal, 'evolution-step:' || v_step_foreign_deal::text),
+    (v_step_assignment, v_dispatch_a, v_action_assignment::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_assignment, 'evolution-step:' || v_step_assignment::text),
+    (v_step_foreign_assignment, v_dispatch_a, v_action_foreign_assignment::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_foreign_assignment, 'evolution-step:' || v_step_foreign_assignment::text),
+    (v_step_round_robin, v_dispatch_a, v_action_round_robin::text, 'processing', 1, pg_catalog.clock_timestamp() + interval '5 minutes', v_token_round_robin, 'evolution-step:' || v_step_round_robin::text);
 
   PERFORM pg_catalog.set_config('wacrm.t12effect.user_a', v_user_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.user_b', v_user_b::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.account_a', v_account_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.dispatch', v_dispatch_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.dispatch_stale', v_dispatch_stale::text, true);
@@ -186,6 +205,9 @@ BEGIN
   PERFORM pg_catalog.set_config('wacrm.t12effect.step_stale_root', v_step_stale_root::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.step_deal', v_step_deal::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.step_foreign_deal', v_step_foreign_deal::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.step_assignment', v_step_assignment::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.step_foreign_assignment', v_step_foreign_assignment::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.step_round_robin', v_step_round_robin::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_add', v_token_add::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_remove', v_token_remove::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_update', v_token_update::text, true);
@@ -194,11 +216,15 @@ BEGIN
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_stale_root', v_token_stale_root::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_deal', v_token_deal::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.token_foreign_deal', v_token_foreign_deal::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.token_assignment', v_token_assignment::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.token_foreign_assignment', v_token_foreign_assignment::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.token_round_robin', v_token_round_robin::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.action_add', v_action_add::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.tag_add', v_tag_add::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.tag_remove', v_tag_remove::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.tag_b', v_tag_b::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.contact_a', v_contact_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.conversation_a', v_conversation_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.pipeline_a', v_pipeline_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.stage_a', v_stage_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.pipeline_b', v_pipeline_b::text, true);
@@ -386,6 +412,78 @@ BEGIN
                          WHERE user_id=current_setting('wacrm.t12effect.user_a')::uuid)
          AND title='Synthetic opportunity') <> 1 THEN
     RAISE EXCEPTION 'create_deal replay inserted another deal';
+  END IF;
+
+  SELECT * INTO STRICT v_result FROM public.apply_evolution_automation_effect(
+    v_dispatch, v_root_token,
+    current_setting('wacrm.t12effect.step_assignment')::uuid,
+    current_setting('wacrm.t12effect.token_assignment')::uuid,
+    'assign_conversation', pg_catalog.jsonb_build_object(
+      'conversation_id',current_setting('wacrm.t12effect.conversation_a')::uuid,
+      'assigned_agent_id',current_setting('wacrm.t12effect.user_a')::uuid));
+  IF v_result.state <> 'done'
+     OR v_result.result->>'conversation_id' IS DISTINCT FROM current_setting('wacrm.t12effect.conversation_a')
+     OR v_result.result->>'assigned_agent_id' IS DISTINCT FROM current_setting('wacrm.t12effect.user_a')
+     OR (SELECT c.assigned_agent_id FROM public.conversations c
+          WHERE c.id=current_setting('wacrm.t12effect.conversation_a')::uuid)
+        IS DISTINCT FROM current_setting('wacrm.t12effect.user_a')::uuid
+     OR (SELECT s.state FROM public.evolution_dispatch_steps s
+          WHERE s.id=current_setting('wacrm.t12effect.step_assignment')::uuid) <> 'done' THEN
+    RAISE EXCEPTION 'specific assignment did not atomically update conversation and checkpoint';
+  END IF;
+  BEGIN
+    PERFORM * FROM public.apply_evolution_automation_effect(
+      v_dispatch,v_root_token,
+      current_setting('wacrm.t12effect.step_assignment')::uuid,
+      current_setting('wacrm.t12effect.token_assignment')::uuid,
+      'assign_conversation', pg_catalog.jsonb_build_object(
+        'conversation_id',current_setting('wacrm.t12effect.conversation_a')::uuid,
+        'assigned_agent_id',current_setting('wacrm.t12effect.user_a')::uuid));
+    RAISE EXCEPTION 'completed assignment action replayed';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL;
+  END;
+  IF (SELECT c.assigned_agent_id FROM public.conversations c
+       WHERE c.id=current_setting('wacrm.t12effect.conversation_a')::uuid)
+       IS DISTINCT FROM current_setting('wacrm.t12effect.user_a')::uuid THEN
+    RAISE EXCEPTION 'assignment replay changed the conversation';
+  END IF;
+
+  BEGIN
+    PERFORM * FROM public.apply_evolution_automation_effect(
+      v_dispatch,v_root_token,
+      current_setting('wacrm.t12effect.step_foreign_assignment')::uuid,
+      current_setting('wacrm.t12effect.token_foreign_assignment')::uuid,
+      'assign_conversation', pg_catalog.jsonb_build_object(
+        'conversation_id',current_setting('wacrm.t12effect.conversation_a')::uuid,
+        'assigned_agent_id',current_setting('wacrm.t12effect.user_b')::uuid));
+    RAISE EXCEPTION 'cross-account assigned agent was accepted';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+  IF (SELECT c.assigned_agent_id FROM public.conversations c
+       WHERE c.id=current_setting('wacrm.t12effect.conversation_a')::uuid)
+       IS DISTINCT FROM current_setting('wacrm.t12effect.user_a')::uuid
+     OR (SELECT s.state FROM public.evolution_dispatch_steps s
+          WHERE s.id=current_setting('wacrm.t12effect.step_foreign_assignment')::uuid) <> 'processing' THEN
+    RAISE EXCEPTION 'cross-account assignment changed conversation or checkpoint';
+  END IF;
+
+  BEGIN
+    PERFORM * FROM public.apply_evolution_automation_effect(
+      v_dispatch,v_root_token,
+      current_setting('wacrm.t12effect.step_round_robin')::uuid,
+      current_setting('wacrm.t12effect.token_round_robin')::uuid,
+      'assign_conversation', pg_catalog.jsonb_build_object(
+        'conversation_id',current_setting('wacrm.t12effect.conversation_a')::uuid,
+        'assigned_agent_id',current_setting('wacrm.t12effect.user_a')::uuid));
+    RAISE EXCEPTION 'round_robin assignment was accepted';
+  EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+  END;
+  IF (SELECT c.assigned_agent_id FROM public.conversations c
+       WHERE c.id=current_setting('wacrm.t12effect.conversation_a')::uuid)
+       IS DISTINCT FROM current_setting('wacrm.t12effect.user_a')::uuid
+     OR (SELECT s.state FROM public.evolution_dispatch_steps s
+          WHERE s.id=current_setting('wacrm.t12effect.step_round_robin')::uuid) <> 'processing' THEN
+    RAISE EXCEPTION 'round_robin rejection changed conversation or checkpoint';
   END IF;
 
   BEGIN
