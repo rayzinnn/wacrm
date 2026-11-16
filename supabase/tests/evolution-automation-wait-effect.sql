@@ -181,6 +181,7 @@ DECLARE
   v_result record;
   v_before timestamptz;
   v_after timestamptz;
+  v_checkpoint_count integer;
 BEGIN
   BEGIN
     PERFORM * FROM public.apply_evolution_automation_effect(
@@ -213,8 +214,8 @@ BEGIN
   BEGIN
     PERFORM * FROM public.apply_evolution_automation_effect(
       v_dispatch,v_token_root,v_step_wait,v_token_wait,'wait_for_reply','{}'::jsonb);
-    RAISE EXCEPTION 'wait_for_reply was unexpectedly enabled';
-  EXCEPTION WHEN SQLSTATE '22023' THEN NULL;
+    RAISE EXCEPTION 'wait_for_reply accepted a persisted timed-wait step';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
   END;
 
   v_before := pg_catalog.clock_timestamp();
@@ -243,6 +244,15 @@ BEGIN
      OR (SELECT s.state FROM public.evolution_dispatch_steps s WHERE s.id=v_step_wait)<>'done' THEN
     RAISE EXCEPTION 'wait queue fields and step checkpoint were not committed atomically';
   END IF;
+  SELECT pg_catalog.count(*) INTO v_checkpoint_count
+    FROM public.automation_logs AS l
+    CROSS JOIN LATERAL pg_catalog.jsonb_array_elements(l.steps_executed) AS item(value)
+   WHERE l.id = current_setting('wacrm.t12wait.log_a')::uuid
+     AND item.value->>'evolution_dispatch_step_id' = v_step_wait::text
+     AND item.value->'result'->>'pending_execution_id' = v_pending_id::text;
+  IF v_checkpoint_count <> 1 THEN
+    RAISE EXCEPTION 'wait did not append exactly one checkpoint with its queue result';
+  END IF;
 
   BEGIN
     PERFORM * FROM public.apply_evolution_automation_effect(
@@ -253,6 +263,14 @@ BEGIN
   IF (SELECT count(*) FROM public.automation_pending_executions e
        WHERE e.evolution_dispatch_step_id=v_step_wait)<>1 THEN
     RAISE EXCEPTION 'wait replay created a second scheduled execution';
+  END IF;
+  SELECT pg_catalog.count(*) INTO v_checkpoint_count
+    FROM public.automation_logs AS l
+    CROSS JOIN LATERAL pg_catalog.jsonb_array_elements(l.steps_executed) AS item(value)
+   WHERE l.id = current_setting('wacrm.t12wait.log_a')::uuid
+     AND item.value->>'evolution_dispatch_step_id' = v_step_wait::text;
+  IF v_checkpoint_count <> 1 THEN
+    RAISE EXCEPTION 'wait replay duplicated its automation log checkpoint';
   END IF;
 
   BEGIN

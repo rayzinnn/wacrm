@@ -195,6 +195,7 @@ BEGIN
   PERFORM pg_catalog.set_config('wacrm.t12effect.user_b', v_user_b::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.account_a', v_account_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.dispatch', v_dispatch_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12effect.log_a', v_log_a::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.dispatch_stale', v_dispatch_stale::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.root_token', v_root_token::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12effect.step_add', v_step_add::text, true);
@@ -275,6 +276,7 @@ DECLARE
   v_token uuid := current_setting('wacrm.t12effect.token_add')::uuid;
   v_result record;
   v_claim record;
+  v_checkpoint_count integer;
 BEGIN
   BEGIN
     PERFORM * FROM public.apply_evolution_automation_effect(
@@ -299,6 +301,14 @@ BEGIN
         AND tag_id = current_setting('wacrm.t12effect.tag_add')::uuid) THEN
     RAISE EXCEPTION 'stale calls changed the absent add_tag relation';
   END IF;
+  SELECT pg_catalog.count(*) INTO v_checkpoint_count
+    FROM public.automation_logs AS l
+    CROSS JOIN LATERAL pg_catalog.jsonb_array_elements(l.steps_executed) AS item(value)
+   WHERE l.id = current_setting('wacrm.t12effect.log_a')::uuid
+     AND item.value->>'evolution_dispatch_step_id' = current_setting('wacrm.t12effect.step_add')::uuid::text;
+  IF v_checkpoint_count <> 0 THEN
+    RAISE EXCEPTION 'fenced add_tag rejection wrote a checkpoint';
+  END IF;
 
   BEGIN
     PERFORM * FROM public.apply_evolution_automation_effect(
@@ -322,6 +332,16 @@ BEGIN
   IF v_result.state <> 'done' OR v_result.step_id IS DISTINCT FROM v_step THEN
     RAISE EXCEPTION 'add_tag did not complete its step';
   END IF;
+  SELECT pg_catalog.count(*) INTO v_checkpoint_count
+    FROM public.automation_logs AS l
+    CROSS JOIN LATERAL pg_catalog.jsonb_array_elements(l.steps_executed) AS item(value)
+   WHERE l.id = current_setting('wacrm.t12effect.log_a')::uuid
+     AND item.value->>'evolution_dispatch_step_id' = v_step::text
+     AND item.value->>'outcome_state' = 'done'
+     AND item.value->'result' = 'null'::jsonb;
+  IF v_checkpoint_count <> 1 THEN
+    RAISE EXCEPTION 'add_tag did not append exactly one successful checkpoint';
+  END IF;
   SELECT * INTO STRICT v_claim FROM public.claim_evolution_dispatch_step(
     v_dispatch, v_root_token, current_setting('wacrm.t12effect.action_add'), 30);
   IF v_claim.state <> 'done' OR v_claim.should_execute THEN
@@ -340,6 +360,14 @@ BEGIN
       WHERE contact_id = current_setting('wacrm.t12effect.contact_a')::uuid
         AND tag_id = current_setting('wacrm.t12effect.tag_add')::uuid) <> 1 THEN
     RAISE EXCEPTION 'add_tag replay duplicated the relation';
+  END IF;
+  SELECT pg_catalog.count(*) INTO v_checkpoint_count
+    FROM public.automation_logs AS l
+    CROSS JOIN LATERAL pg_catalog.jsonb_array_elements(l.steps_executed) AS item(value)
+   WHERE l.id = current_setting('wacrm.t12effect.log_a')::uuid
+     AND item.value->>'evolution_dispatch_step_id' = v_step::text;
+  IF v_checkpoint_count <> 1 THEN
+    RAISE EXCEPTION 'add_tag replay duplicated its automation log checkpoint';
   END IF;
 
   SELECT * INTO STRICT v_result FROM public.apply_evolution_automation_effect(
