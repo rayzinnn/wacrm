@@ -57,10 +57,13 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | SIS — plano visual | Concluído no planejamento | ac91167; 23 páginas, 12 subáreas de configurações e fases F1–F8 em `sis-integration-plan.md`. |
 | T09 — roots de dispatch | Concluído no schema local | 2801761; raízes únicas por evento/engine/definição, RLS/grants e teste SQL rollback-only. Aplicação transacional e execução ainda pendentes. |
 | T09 — aplicação inbound textual | Concluído no banco local | a6d1a53; mensagem, preview/unread, raízes de dispatch e evento são concluídos na mesma transação. SQL rollback-only e corrida em duas sessões passaram; worker de mensagem e assinatura real ainda pendentes. |
+| T09 — claim de mensagem | Concluído no banco local | 89edd3d; RPC separada reivindica só eventos textuais, limita lease/tentativas e não interfere no worker de conexão. SQL rollback-only e corrida 6+6 passaram. |
+| T09 — worker inbound textual | Concluído no código/local vazio | ed28d60; cron autenticado roda lotes de conexão e mensagem, 21 testes focados e typecheck. Smoke da claim local vazia passou; assinatura real MESSAGES_UPSERT e prova sintética ponta a ponta pendentes. |
 | T03 — diagnóstico de logging | Concluído | d87eb42; imagem Evolution original compilada chama `console.log` com o objeto de mensagem antes de emitir `messages.upsert`; motivou a correção local abaixo. |
 | T03 — logging corrigido localmente | Concluído na imagem local | 9ad496b; overlay determinístico remove somente o log bruto dos JS/MJS compilados, preserva as emissões e API HTTP 200/instância aberta. Assinatura real ainda desativada até o worker inbound. |
 | SIS F1 | Concluído | 421bfa1; tema SIS opt-in, Manrope local, claro/escuro e mobile verificados. Tema padrão legado preservado. F2 shell em execução. |
-| SIS F2.a — shell | Concluído | 2ea3386; rail 232/72, topbar, drawer móvel, navegação/atalhos e foco verificados em 1440/1024/768/320. F2.b de primitives e famílias de telas em execução. |
+| SIS F2.a — shell | Concluído | 2ea3386; rail 232/72, topbar, drawer móvel, navegação/atalhos e foco verificados em 1440/1024/768/320. Famílias de telas em execução. |
+| SIS F2.b — overlays | Concluído no código | 4dc54fa; diálogos, painéis, menus e popovers acima do rail móvel, com limite de altura/scroll. Lint, typecheck e teste existente passaram; QA visual de overlay pendente para F8 por instabilidade do portal. |
 | T10 — core e rotas de texto | Concluído no recorte | ef2090d; texto usa adapter Evolution com chave idempotente, replay sem segundo POST, 44 testes e typecheck. Composer e clientes públicos ainda precisam enviar a chave; capability segue desligada. |
 | T10 — consulta de operação | Concluído | c9f69e7; GET autenticado e isolado por conta/conversa, nove testes e typecheck. Nenhum conteúdo ou credencial exposto. |
 | T13.ui1 | Concluído | e4432c6; navegação e deep links bloqueados, 10 testes i18n/lint/typecheck e portal verificados. |
