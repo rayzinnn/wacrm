@@ -45,3 +45,10 @@ next-env.d.ts
 
 # supabase
 supabase/.temp/
+supabase/.branches/
+
+# Local orchestration, credentials, and sensitive provider observations
+.maestri/
+.local/
+.t02c-logs/
+infra/evolution/private/
