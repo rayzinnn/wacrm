@@ -54,12 +54,21 @@ GET /instance/fetchInstances com chave intencionalmente inválida retornou HTTP 
 
 As fixtures vieram de chamadas HTTP locais reais neste boot. Removem credenciais e hash; não devem ser usadas como evidência de QR, conexão, webhook ou envio.
 
+## QR — observação local T03.b2 (parcial)
+
+- Uma chamada GET `/instance/connect/wacrm-local` com a credencial restrita da instância retornou HTTP 200 na primeira tentativa. O corpo observado tinha os campos de topo `pairingCode` (null), `code` (string), `base64` (string) e `count` (number; valor 1). Os conteúdos de `code` e `base64` são material QR e permanecem somente no arquivo bruto privado, ignorado pelo Git e modo 0600; não devem ser copiados para logs, terminal, tickets ou fixtures.
+- Estado consultado imediatamente antes: `close`; após a chamada: `connecting` (ambas HTTP 200). Nenhum aparelho foi pareado e nenhuma mensagem foi enviada. Não houve segunda chamada de geração porque a primeira retornou QR.
+- Logger do container conferido em runtime: `LOG_LEVEL=WARN,ERROR`, `LOG_BAILEYS=fatal`; nenhuma variável `LOG`, `WEBHOOKS`, `DEBUG` ou `VERBOSE` estava definida. A configuração deixa fora a saída `LOG` usada para QR no terminal.
+- Fixture sanitizada: `infra/evolution/fixtures/instance-connect.observed.sanitized.json`, junto com `infra/evolution/fixtures/qr-synthetic-placeholder.png`. Mantém somente tipos observados e o contador, substitui conteúdos sensíveis, e aponta para um PNG sintético marcado “SYNTHETIC PLACEHOLDER / NOT A QR CODE”; a imagem não é saída do Evolution.
+- Política local para implementação futura: tratar QR como dado efêmero e descartar do estado/memória/UI local após no máximo 20 segundos, inclusive ao substituir por um QR novo ou sair do fluxo. Esse é um limite conservador do WACRM, ainda não implementado. A API Evolution não forneceu TTL remoto; não inferimos expiração no servidor.
+- Resposta bruta, estado posterior e estado anterior estão em `infra/evolution/private/`, ignorado e modo 0600; nunca são fixtures compartilháveis.
+
 ## Ainda pendente
 
-- QR: não buscado; sem pareamento humano.
+- Pareamento humano e ciclo de conexão persistente; a observação apenas moveu o estado para `connecting`.
 - Eventos/webhook: nenhuma chamada de callback; envelope, autenticação e retries não foram testados no runtime deste Compose.
 - Mensagens: nenhum envio; nenhum identificador/response de texto ou mídia observado.
-- Não foram feitas chamadas a connect, logout ou delete.
+- Logout e delete não foram chamados. A única chamada a connect está descrita acima; estado `connecting` não comprova conexão WhatsApp concluída.
 - O schema interno do CRM e correspondência provider-connection seguem para tarefa própria; este documento não fecha RPCs nem migrations do CRM.
 
 ## Fontes

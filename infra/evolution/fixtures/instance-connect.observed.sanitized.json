@@ -1,0 +1,26 @@
+{
+  "fixture_kind": "sanitized_observation",
+  "source": "Evolution API 2.3.7 local; GET /instance/connect/wacrm-local using the restricted instance credential",
+  "http_status": 200,
+  "attempt": 1,
+  "warning": "Not replayable. No original QR/code/base64 value is retained here. The image file is a synthetic placeholder, not provider output.",
+  "observed_fields": {
+    "pairingCode": {
+      "type": "null",
+      "value": null
+    },
+    "code": {
+      "type": "string",
+      "value": "[REDACTED: original QR code string omitted]"
+    },
+    "base64": {
+      "type": "string",
+      "value": "[SYNTHETIC PNG PLACEHOLDER; not the provider base64]"
+    },
+    "count": {
+      "type": "number",
+      "value": 1
+    }
+  },
+  "synthetic_image": "qr-synthetic-placeholder.png"
+}
