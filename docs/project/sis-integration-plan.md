@@ -6,6 +6,8 @@ Versão 1 — 16/11/2026. Estado: planejamento pronto para execução por fases;
 
 Reconstruir a apresentação do CRM com a linguagem **SIS Signal Desk**: mesa comercial silenciosa, Manrope local, hierarquia editorial, superfícies discretas, command rail e Flowline restrita a receita/progresso/continuidade comercial. O WACRM continua sendo a aplicação operacional: rotas Next, autenticação, permissões, contas, dados, paginação, realtime, persistência e contratos permanecem sob responsabilidade de seus componentes e serviços atuais.
 
+Decisão do proprietário em 16/11/2026: WACRM e SIS serão vendidos juntos, mas operarão separadamente. Este plano transfere apenas o visual da SIS para o WACRM; missões, geração de leads e funções da extensão permanecem no produto SIS.
+
 Este plano autoriza planejamento de apresentação, não habilita transporte WhatsApp nem importa funcionalidades da extensão SIS. O destino permanece localhost; não envolve publicação, migração de banco, instalação de dependências ou alteração de infraestrutura. A execução de cada fase deve preservar os bloqueios de capabilities vigentes naquele momento.
 
 **Primeiro pacote delegável: F1, seção 7.** Pode começar após reserva dos arquivos pelo coordenador. Não depende da conclusão do transporte de texto porque não altera seus consumidores ou contratos. F4 e o QA operacional dependem das entregas correspondentes de transporte.
