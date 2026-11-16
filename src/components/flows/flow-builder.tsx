@@ -17,7 +17,14 @@
  * are list-only and have no canvas analogue.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslations } from 'next-intl';
 import {
   CircleAlert,
@@ -62,6 +69,7 @@ import { NodeConfigForm } from './forms/node-config-form';
 import { NodeKeySelect } from './forms/fields';
 import { IssueLine } from './validation-panel';
 import { useFlowEditor, type BuilderState } from './flow-editor-state';
+import styles from './flow-editor.module.css';
 
 // ============================================================
 // Local state shape — mirrors the DB but the configs are typed
@@ -155,7 +163,7 @@ export function FlowBuilder() {
   }, [flashKey]);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-7">
+    <div className={styles.listRoot}>
       <TriggerPanel
         state={state}
         setState={setState}
@@ -165,41 +173,47 @@ export function FlowBuilder() {
 
       <EntryPicker state={state} setState={setState} t={t} />
 
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-foreground text-sm font-semibold">
+      <section className={styles.listSection}>
+        <div className={styles.listSectionHeader}>
+          <h2 className={styles.listSectionTitle}>
             {t('nodesTitle', { count: state.nodes.length })}
           </h2>
           <AddNodeButton onAdd={addNode} t={t} />
         </div>
 
         {state.nodes.length === 0 ? (
-          <div className="border-border bg-card/50 text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
-            {t.rich('nodesEmpty', { strong: (chunks) => <strong>{chunks}</strong> })}
+          <div className={styles.emptyNodes}>
+            {t.rich('nodesEmpty', {
+              strong: (chunks) => <strong>{chunks}</strong>,
+            })}
           </div>
         ) : (
-          state.nodes.map((node) => (
-            <NodeCard
-              key={node.node_key}
-              node={node}
-              allNodes={state.nodes}
-              expanded={expandedWithFlash.has(node.node_key)}
-              isEntry={state.entry_node_id === node.node_key}
-              isFlashed={flashKey === node.node_key}
-              cardRef={setNodeRef(node.node_key)}
-              issues={issues.filter(
-                (i) => i.scope === 'node' && i.node_key === node.node_key
-              )}
-              onToggle={() => toggleExpanded(node.node_key)}
-              onUpdate={(patch) => updateNode(node.node_key, patch)}
-              onUpdateConfig={(patch) => updateNodeConfig(node.node_key, patch)}
-              onRemove={() => removeNode(node.node_key)}
-              onSetEntry={() =>
-                setState((s) => ({ ...s, entry_node_id: node.node_key }))
-              }
-              t={t}
-            />
-          ))
+          <div className={styles.nodeList}>
+            {state.nodes.map((node) => (
+              <NodeCard
+                key={node.node_key}
+                node={node}
+                allNodes={state.nodes}
+                expanded={expandedWithFlash.has(node.node_key)}
+                isEntry={state.entry_node_id === node.node_key}
+                isFlashed={flashKey === node.node_key}
+                cardRef={setNodeRef(node.node_key)}
+                issues={issues.filter(
+                  (i) => i.scope === 'node' && i.node_key === node.node_key
+                )}
+                onToggle={() => toggleExpanded(node.node_key)}
+                onUpdate={(patch) => updateNode(node.node_key, patch)}
+                onUpdateConfig={(patch) =>
+                  updateNodeConfig(node.node_key, patch)
+                }
+                onRemove={() => removeNode(node.node_key)}
+                onSetEntry={() =>
+                  setState((s) => ({ ...s, entry_node_id: node.node_key }))
+                }
+                t={t}
+              />
+            ))}
+          </div>
         )}
       </section>
     </div>
@@ -273,8 +287,10 @@ function TriggerPanel({
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <section className="border-border bg-card rounded-lg border p-4">
-      <h2 className="text-foreground mb-3 text-sm font-semibold">{t('triggerTitle')}</h2>
+    <section className={styles.listPanel}>
+      <h2 className="text-foreground mb-3 text-sm font-semibold">
+        {t('triggerTitle')}
+      </h2>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
           <label className="text-muted-foreground mb-1 block text-xs">
@@ -301,9 +317,7 @@ function TriggerPanel({
               <SelectItem value="first_inbound_message">
                 {t('triggerFirstInboundTitle')}
               </SelectItem>
-              <SelectItem value="manual">
-                {t('triggerManualTitle')}
-              </SelectItem>
+              <SelectItem value="manual">{t('triggerManualTitle')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -355,9 +369,11 @@ function EntryPicker({
 }) {
   if (state.nodes.length === 0) return null;
   return (
-    <section className="border-border bg-card flex items-center gap-3 rounded-lg border p-3">
+    <section className={cn(styles.listPanel, styles.entryPanel)}>
       <CornerDownRight className="text-primary h-4 w-4 shrink-0" />
-      <span className="text-muted-foreground text-xs">{t('entryNodeTitle')}</span>
+      <span className="text-muted-foreground text-xs">
+        {t('entryNodeTitle')}
+      </span>
       <NodeKeySelect
         value={state.entry_node_id}
         nodes={state.nodes}
@@ -411,7 +427,8 @@ function NodeCard({
     <div
       ref={cardRef}
       className={cn(
-        'bg-card relative overflow-hidden rounded-xl border transition-shadow duration-500',
+        styles.nodeCard,
+        'relative border transition-shadow duration-300',
         hasError
           ? 'border-red-500/40'
           : isEntry
@@ -428,7 +445,11 @@ function NodeCard({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-3 px-4 py-3 pl-5 text-left"
+        aria-expanded={expanded}
+        className={cn(
+          styles.nodeHeader,
+          'flex w-full items-center gap-3 px-4 py-3 pl-5 text-left'
+        )}
       >
         <NodeIconChip type={node.node_type} size={32} iconSize={16} />
         <div className="min-w-0 flex-1">
@@ -458,7 +479,7 @@ function NodeCard({
           )}
         </div>
         {hasError && (
-          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-red-400" />
+          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-red-700 dark:text-red-300" />
         )}
         {expanded ? (
           <ChevronUp className="text-muted-foreground h-4 w-4" />
@@ -467,7 +488,7 @@ function NodeCard({
         )}
       </button>
       {expanded && (
-        <div className="border-border border-t px-4 py-4">
+        <div className={styles.nodeForm}>
           <NodeConfigWithAdvanced
             node={node}
             allNodes={allNodes}
@@ -475,7 +496,12 @@ function NodeCard({
             onUpdateConfig={onUpdateConfig}
             t={t}
           />
-          <div className="border-border mt-4 flex items-center justify-between border-t pt-3">
+          <div
+            className={cn(
+              styles.nodeActions,
+              'border-border mt-4 flex items-center justify-between border-t'
+            )}
+          >
             <div className="flex items-center gap-2">
               {!isEntry && (
                 <Button variant="ghost" size="sm" onClick={onSetEntry}>
@@ -487,7 +513,7 @@ function NodeCard({
               variant="ghost"
               size="sm"
               onClick={onRemove}
-              className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              className="text-red-700 hover:bg-red-500/10 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
             >
               <Trash2 className="h-3.5 w-3.5" />
               {t('removeNode')}
@@ -579,7 +605,13 @@ function NodeConfigWithAdvanced({
 // Add-node menu
 // ============================================================
 
-function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: ReturnType<typeof useTranslations> }) {
+function AddNodeButton({
+  onAdd,
+  t,
+}: {
+  onAdd: (type: NodeType) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
   const types: NodeType[] = [
     'start',
     'send_buttons',

@@ -36,7 +36,14 @@
  * list view reads.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   applyNodeChanges,
   Background,
@@ -96,6 +103,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useFlowEditor } from './flow-editor-state';
+import styles from './flow-editor.module.css';
 import { NodeConfigForm } from './forms/node-config-form';
 
 // React-Flow node `data` payload — the bits our custom renderer needs.
@@ -512,7 +520,7 @@ function FlowCanvasInner() {
 
   if (rfNodes.length === 0) {
     return (
-      <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-sm">
+      <div className={styles.emptyCanvas}>
         <p>{t('noNodesYet')}</p>
         <CanvasAddNodeButton t={t} />
       </div>
@@ -554,10 +562,7 @@ function FlowCanvasInner() {
             size={1.4}
             color="var(--border)"
           />
-          <Controls
-            className="!border-border !bg-card [&_button]:!border-border [&_button]:!bg-card [&_button:hover]:!bg-muted [&_button_svg]:!fill-foreground !overflow-hidden !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
-            showInteractive={false}
-          />
+          <Controls className={styles.canvasControls} showInteractive={false} />
           <MiniMap
             pannable
             zoomable
@@ -567,7 +572,7 @@ function FlowCanvasInner() {
             nodeStrokeWidth={0}
             nodeBorderRadius={3}
             maskColor="color-mix(in oklch, var(--background) 70%, transparent)"
-            className="!border-border !bg-card !rounded-xl !border !shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)]"
+            className={styles.canvasMiniMap}
           />
           <Panel position="top-left" className="!top-4 !left-4">
             <CanvasAddNodeButton t={t} />
@@ -630,15 +635,25 @@ function NodeEditSheet({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         side="right"
-        className="border-border bg-popover flex w-full flex-col gap-0 border-l p-0 sm:max-w-md"
+        className={cn(
+          styles.nodeSheetBody,
+          'border-border bg-popover flex w-full flex-col gap-0 border-l p-0 sm:max-w-md'
+        )}
       >
-        <SheetHeader className="border-border flex-row items-center gap-3 space-y-0 border-b px-5 py-4">
+        <SheetHeader
+          className={cn(
+            styles.nodeSheetHeader,
+            'border-border flex-row items-center gap-3 space-y-0 border-b px-5 py-4'
+          )}
+        >
           <NodeIconChip type={node.node_type} size={36} iconSize={18} />
           <div className="min-w-0 flex-1">
             <SheetTitle className="flex items-center gap-2 text-[11px] font-semibold tracking-wider uppercase">
-              <span style={{ color: c.text }}>{t(`nodes.${node.node_type}.label`)}</span>
+              <span style={{ color: c.text }}>
+                {t(`nodes.${node.node_type}.label`)}
+              </span>
               {isEntry && (
-                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-emerald-300 uppercase">
+                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-emerald-800 uppercase dark:text-emerald-300">
                   {t('badgeEntry')}
                 </span>
               )}
@@ -661,7 +676,12 @@ function NodeEditSheet({
           />
         </div>
 
-        <SheetFooter className="border-border border-t px-5 py-3 sm:flex-row sm:justify-between">
+        <SheetFooter
+          className={cn(
+            styles.nodeSheetFooter,
+            'border-border border-t px-5 py-3 sm:flex-row sm:justify-between'
+          )}
+        >
           {!isEntry ? (
             <Button variant="ghost" size="sm" onClick={onSetEntry}>
               {t('setAsEntry')}
@@ -673,7 +693,7 @@ function NodeEditSheet({
             variant="ghost"
             size="sm"
             onClick={onDelete}
-            className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            className="text-red-700 hover:bg-red-500/10 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200"
           >
             <Trash2 className="h-3.5 w-3.5" />
             {t('deleteNode')}
@@ -735,16 +755,13 @@ function CanvasAddNodeButton({ t }: { t: ReturnType<typeof useTranslations> }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="bg-primary text-primary-foreground hover:bg-primary-hover inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[13px] font-medium shadow-[0_6px_20px_-8px_rgba(0,0,0,0.5)] transition-colors"
+        className="bg-primary text-primary-foreground hover:bg-primary-hover inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-medium shadow-sm transition-colors"
         aria-label={t('addNode')}
       >
         <Plus className="h-4 w-4" />
         {t('addNode')}
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className="border-border bg-popover w-[268px] p-1.5"
-      >
+      <DropdownMenuContent align="start" className={styles.canvasMenu}>
         {groupNodeTypesByCategory(ADD_NODE_TYPES).map((group, i) => (
           // DropdownMenuGroup (base-ui Menu.Group) is REQUIRED: the
           // DropdownMenuLabel below is base-ui's Menu.GroupLabel, which

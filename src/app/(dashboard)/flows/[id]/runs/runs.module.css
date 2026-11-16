@@ -1,0 +1,244 @@
+.page {
+  width: min(100%, 68rem);
+  min-width: 0;
+  margin-inline: auto;
+  padding: clamp(1rem, 2.5vw, 2rem);
+}
+
+.header {
+  display: grid;
+  gap: 0.45rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.15rem;
+}
+
+.back {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  border-radius: 0.55rem;
+  padding: 0.35rem 0.5rem;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.back:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.eyebrow {
+  margin: 0.35rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.2vw, 1.8rem);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.description {
+  max-width: 64ch;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.runList {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+
+.runCard {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(17 19 24 / 3%);
+}
+
+.runToggle {
+  display: flex;
+  width: 100%;
+  min-height: 4.2rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+  text-align: left;
+}
+
+.runToggle:hover {
+  background: color-mix(in srgb, var(--card-2) 64%, transparent);
+}
+
+.runSummary {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.3rem;
+}
+
+.runTitleRow,
+.runMeta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+}
+
+.runContact {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 0.86rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runMeta {
+  color: var(--muted-foreground);
+  font-size: 0.69rem;
+  line-height: 1.4;
+}
+
+.runMetaItem + .runMetaItem::before {
+  margin-inline-end: 0.5rem;
+  color: var(--border);
+  content: '·';
+}
+
+.runDetails {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding: 0.9rem 1rem 1rem;
+}
+
+.capturedVars {
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--card-2);
+}
+
+.capturedVars summary {
+  color: var(--muted-foreground);
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.capturedVars pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  padding: 0.7rem;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.eventList {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.eventLine {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 5.25rem minmax(8rem, 0.8fr) minmax(0, 1.5fr);
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+  border-radius: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  background: color-mix(in srgb, var(--card-2) 68%, transparent);
+  font-size: 0.72rem;
+}
+
+.eventTime {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.eventType {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.69rem;
+  font-weight: 650;
+}
+
+.eventPayload {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+}
+
+.eventNode {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.1rem 0.38rem;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.67rem;
+}
+
+.emptyState {
+  margin-top: 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: 1rem;
+  padding: clamp(2.25rem, 7vw, 4rem) 1.25rem;
+  background: color-mix(in srgb, var(--card) 76%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.page :global(button:focus-visible),
+.page :global(summary:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+@media (max-width: 40rem) {
+  .runToggle {
+    align-items: flex-start;
+    padding-inline: 0.75rem;
+  }
+
+  .runDetails {
+    padding-inline: 0.75rem;
+  }
+
+  .eventLine {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+
+  .eventType {
+    font-size: 0.72rem;
+  }
+}
