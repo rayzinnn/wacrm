@@ -10,6 +10,7 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | Recorte | Estado | Evidência e próximo passo |
 | --- | --- | --- |
 | T01.a/b | Concluído | `evidence/T01.md`; sem colisões, hashes preservados, remotes configurados; commit `75311ba`. |
+| Infra.e | Verificação concluída | 6bcfce7; busca de log na imagem local não confirmou a substring da fonte; nenhuma alteração de Compose/container. evidence/T03.logs.md. |
 | Infra.d | Concluído | 85f9b1c; hostagent VZ residual recuperado usando a instância existente, nove containers e dados preservados. |
 | Infra.a | Concluído | `evidence/Infra.a.md`; ferramentas userland, engine ARM64 e hello-world verificados. |
 | T02.a | Concluído | `evidence/T02.a.md`; npm 10.9.9 ci exit 0, lockfile intacto, env 0600 ignorado; commit `6ffae7f`. |
