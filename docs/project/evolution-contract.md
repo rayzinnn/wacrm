@@ -1,6 +1,6 @@
 # Contrato Evolution local — estado parcial
 
-**Status: parcial (Infra.c/T03.c1).** Confirmado no serviço local Evolution API 2.3.7, ARM64. Bootstrap, geração de QR sem pareamento e entrega/retry de callback de conexão foram observados. Envio e ACK durável no Postgres do CRM continuam pendentes.
+**Status: parcial (Infra.c/T03.e1).** Confirmado no serviço local Evolution API 2.3.7, ARM64. Bootstrap, callback de conexão e um envio controlado de texto foram observados. ACK durável do fluxo de mensagens no Postgres do CRM e resposta explícita do contato continuam pendentes.
 
 ## Build local fixado
 
@@ -86,13 +86,22 @@ As fixtures vieram de chamadas HTTP locais reais neste boot. Removem credenciais
 
 Após a validação de T08.a/b/c, a rota connect configura o webhook com a credencial restrita e o segredo independente do registro. A verificação real do coordenador confirmou a configuração por GET /webhook/find e um callback da principal persistido em evolution_events, somente com kind/eventKey/occurredAt. Evidências: evidence/T08.manual.md e evidence/T08.activation.md. O receptor só retorna 200 para evento conhecido após await da escrita; erro de banco retorna 503 (caso testado com double). Somente CONNECTION_UPDATE está habilitado. O descarte local de QR em 20 s já foi implementado e verificado no painel em T07.manual; isso não é TTL remoto.
 
-O callback da principal está ativo. Seu processamento por worker ainda está em implementação neste marco. Não há pareamento nem mensagens homologadas.
+O callback da principal está ativo. Seu processamento de conexão foi integrado; o fluxo de mensagens não está habilitado no CRM. T03.e1 observou a sessão `open` antes e depois de um envio local único, sem habilitar capability ou alterar consumidores.
+
+## Envio controlado de texto e eventos — T03.e1
+
+- Com estado `open` consultado por token restrito, uma única consulta `whatsappNumbers` confirmou o destinatário direto informado pelo operador e seu JID individual. Foi feito um único `POST /message/sendText/:instanceName` com o texto de teste acordado; HTTP 201 retornou `key.id`, JID correspondente, `fromMe=true`, `messageType=conversation`, status `PENDING` e `messageTimestamp` numérico em segundos UNIX.
+- O callback `send.message` chegou primeiro e seu `key.id` correspondeu ao da resposta. Aproximadamente 2,1 s depois, `messages.upsert` trouxe outro ID, `fromMe=false`, com `key.remoteJid` exatamente igual ao JID validado, `messageType=conversation`, status `DELIVERY_ACK` e conteúdo não vazio redigido. Seu `messageTimestamp` (segundos UNIX) é posterior ao início do POST e fica a 891 ms de `receivedAt`; registro como inbound do peer validado, sem classificá-lo como reply do teste ou correlacioná-lo ao envio pelo ID.
+- Não chegou `messages.update` nem texto inbound `WACRM-TESTE` na janela de cinco minutos. Seis itens de callbacks continham `@lid` sem correspondência inequívoca com o JID da consulta; não foram associados ao destinatário nem armazenados. Nenhuma fixture foi criada para eventos ausentes.
+- Um proxy temporário em loopback recebeu somente eventos do JID testado, autenticou com os dois headers independentes existentes, limitou corpos a 4 MiB e fez fsync dos callbacks-alvo antes de responder 200. `CONNECTION_UPDATE` foi encaminhado à URL original do CRM; a verificação desta tarefa não afirma nova persistência de conexão. A configuração original foi restaurada e confirmada por `GET /webhook/find`; estado final permaneceu `open`.
+- Fixtures: `infra/evolution/fixtures/text-send.observed.sanitized.json`, `message-send.observed.sanitized.json` e `message-upsert.observed.sanitized.json`. Mantêm o domínio observado `@s.whatsapp.net` com peer placeholder e a projeção mínima de contrato; removem integralmente `contextInfo`/`messageContextInfo`, incluindo `messageSecret` e metadados/hashes de device. Logo, não servem para validar esses metadados criptográficos. Número e IDs reais, headers, URLs, nomes e texto inbound foram redigidos/removidos. Corpos brutos, journal e backup exato do webhook permanecem privados em arquivos 0600 ignorados pelo Git.
+- HTTP 201 e `send.message` não provam entrega. O status `PENDING` da resposta não foi promovido a `sent`; o `DELIVERY_ACK` do upsert pertence a um ID diferente. Não houve retry, outra mensagem, mídia, logout, delete, connect, QR ou mudança de capability/CRM/banco/normalizador.
 
 ## Ainda pendente
 
-- Pareamento humano e ciclo de conexão persistente; a observação apenas moveu o estado para `connecting`.
-- Outros eventos/webhook: somente `CONNECTION_UPDATE` foi testado. Envelope de mensagens, download de mídia e retries para outros eventos permanecem pendentes.
-- Mensagens: nenhum envio; nenhum identificador/response de texto ou mídia observado.
+- Recuperação da sessão pareada após reinício e ciclo de reconexão; T03.e1 observou `open` antes e depois da janela, mas não testou reinício.
+- Outros eventos/webhook: `send.message` e `messages.upsert` foram observados para o teste; `messages.update`, mídia, replay/retry de mensagens e demais eventos continuam pendentes.
+- Mensagens: um envio de texto foi observado em T03.e1; reply esperado e ACK durável da mensagem no CRM seguem pendentes. Mídia não foi observada.
 - Na instância principal, logout/delete não foram chamados. O connect e a remoção limitados às probes temporárias estão descritos acima; estado `connecting` não comprova conexão WhatsApp concluída.
 - O schema interno do CRM e correspondência provider-connection seguem para tarefa própria; este documento não fecha RPCs nem migrations do CRM.
 

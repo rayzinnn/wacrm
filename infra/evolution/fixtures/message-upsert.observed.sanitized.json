@@ -1,0 +1,49 @@
+{
+  "payload": {
+    "event": "messages.upsert",
+    "instance": "wacrm-local",
+    "date_time": "2026-11-16T13:53:58.922Z",
+    "data": {
+      "key": {
+        "id": "[MESSAGE_ID_2]",
+        "remoteJid": "[TEST_PEER]@s.whatsapp.net",
+        "fromMe": false
+      },
+      "message": {
+        "conversation": "[REDACTED_INBOUND_TEXT]"
+      },
+      "messageTimestamp": 1794848038,
+      "messageType": "conversation",
+      "status": "DELIVERY_ACK",
+      "source": "unknown"
+    }
+  },
+  "receivedAt": "2026-11-16T16:53:58.891Z",
+  "expected": {
+    "event": "messages.upsert",
+    "sequence": 2,
+    "keyId": "[MESSAGE_ID_2]",
+    "remoteJid": "[TEST_PEER]@s.whatsapp.net",
+    "peerMatchedByVerifiedWhatsAppNumbersJid": true,
+    "idMatchesSendTextResponse": false,
+    "fromMe": false,
+    "messageType": "conversation",
+    "status": "DELIVERY_ACK",
+    "messageTimestamp": 1794848038,
+    "messageTimestampUnit": "unix_seconds",
+    "providerDateTime": "2026-11-16T13:53:58.922Z",
+    "receivedAt": "2026-11-16T16:53:58.891Z",
+    "replyPhraseObserved": false,
+    "peerCorrelationMethod": "key.remoteJid exactly equals the JID returned by the single whatsappNumbers lookup",
+    "remoteJidIsLid": false,
+    "remoteJidAltAlsoMatchesVerifiedJid": true,
+    "inboundTextNonEmpty": true,
+    "textContentRedacted": true,
+    "requestMarkerObserved": false,
+    "postStartedAt": "2026-11-16T16:53:55.843Z",
+    "messageTimestampISO": "2026-11-16T16:53:58.000Z",
+    "messageTimestampAfterPostStart": true,
+    "receivedAtDeltaMilliseconds": 891,
+    "classifiedAsReplyToTest": false
+  }
+}

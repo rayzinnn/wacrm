@@ -1,0 +1,38 @@
+{
+  "payload": {
+    "event": "send.message",
+    "instance": "wacrm-local",
+    "date_time": "2026-11-16T13:53:56.773Z",
+    "data": {
+      "key": {
+        "id": "[MESSAGE_ID_1]",
+        "remoteJid": "[TEST_PEER]@s.whatsapp.net",
+        "fromMe": true
+      },
+      "message": {
+        "conversation": "Teste WACRM local. Responda WACRM-TESTE para validar o recebimento."
+      },
+      "messageTimestamp": 1794848035,
+      "messageType": "conversation",
+      "status": "PENDING",
+      "source": "web"
+    }
+  },
+  "receivedAt": "2026-11-16T16:53:56.749Z",
+  "expected": {
+    "event": "send.message",
+    "sequence": 1,
+    "keyId": "[MESSAGE_ID_1]",
+    "remoteJid": "[TEST_PEER]@s.whatsapp.net",
+    "peerMatchedByVerifiedWhatsAppNumbersJid": true,
+    "idMatchesSendTextResponse": true,
+    "fromMe": true,
+    "messageType": "conversation",
+    "status": "PENDING",
+    "messageTimestamp": 1794848035,
+    "messageTimestampUnit": "unix_seconds",
+    "providerDateTime": "2026-11-16T13:53:56.773Z",
+    "receivedAt": "2026-11-16T16:53:56.749Z",
+    "replyPhraseObserved": false
+  }
+}

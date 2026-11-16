@@ -1,0 +1,32 @@
+{
+  "request": {
+    "number": "[TEST_PHONE]",
+    "text": "Teste WACRM local. Responda WACRM-TESTE para validar o recebimento."
+  },
+  "response": {
+    "key": {
+      "id": "[MESSAGE_ID_1]",
+      "remoteJid": "[TEST_PEER]@s.whatsapp.net",
+      "fromMe": true
+    },
+    "message": {
+      "conversation": "Teste WACRM local. Responda WACRM-TESTE para validar o recebimento."
+    },
+    "messageTimestamp": 1794848035,
+    "messageType": "conversation",
+    "source": "web",
+    "status": "PENDING"
+  },
+  "expected": {
+    "httpStatus": 201,
+    "keyId": "[MESSAGE_ID_1]",
+    "remoteJid": "[TEST_PEER]@s.whatsapp.net",
+    "fromMe": true,
+    "messageType": "conversation",
+    "status": "PENDING",
+    "messageTimestamp": 1794848035,
+    "messageTimestampUnit": "unix_seconds",
+    "responseText": "Teste WACRM local. Responda WACRM-TESTE para validar o recebimento.",
+    "sendMessageCallbackSequence": 1
+  }
+}
