@@ -24,7 +24,7 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "sis";
 
 export const STORAGE_KEY = "wacrm.theme";
 
@@ -71,7 +71,7 @@ export const THEMES: ReadonlyArray<ThemeMeta> = [
   {
     id: "violet",
     name: "Violet",
-    tagline: "The default — confident, slightly playful.",
+    tagline: "Legacy accent — confident, slightly playful.",
     swatch: "oklch(0.526 0.247 293)",
   },
   {
@@ -101,7 +101,7 @@ export const THEMES: ReadonlyArray<ThemeMeta> = [
   {
     id: "sis",
     name: "SIS",
-    tagline: "A quiet, neutral Signal Desk palette.",
+    tagline: "The default — a quiet, neutral Signal Desk palette.",
     swatch: "#3B4DE8",
   },
 ];
