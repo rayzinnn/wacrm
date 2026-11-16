@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { runEvolutionEventBatch } from '@/lib/whatsapp/evolution/event-worker'
+import { runEvolutionMessageBatch } from '@/lib/whatsapp/evolution/message-worker'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -29,7 +30,25 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const counts = await runEvolutionEventBatch()
+    const results = await Promise.allSettled([
+      runEvolutionEventBatch(),
+      runEvolutionMessageBatch(),
+    ])
+    if (results.some((result) => result.status === 'rejected')) {
+      throw new Error('One or more Evolution event workers failed.')
+    }
+
+    const counts = results.reduce((total, result) => {
+      if (result.status !== 'fulfilled') return total
+      return {
+        claimed: total.claimed + result.value.claimed,
+        done: total.done + result.value.done,
+        retry: total.retry + result.value.retry,
+        failed: total.failed + result.value.failed,
+        stale: total.stale + result.value.stale,
+      }
+    }, { claimed: 0, done: 0, retry: 0, failed: 0, stale: 0 })
+
     return NextResponse.json(
       {
         claimed: counts.claimed,
