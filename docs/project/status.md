@@ -10,6 +10,7 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | Recorte | Estado | Evidência e próximo passo |
 | --- | --- | --- |
 | T01.a/b | Concluído | `evidence/T01.md`; sem colisões, hashes preservados, remotes configurados; commit `75311ba`. |
+| Infra.d | Concluído | 85f9b1c; hostagent VZ residual recuperado usando a instância existente, nove containers e dados preservados. |
 | Infra.a | Concluído | `evidence/Infra.a.md`; ferramentas userland, engine ARM64 e hello-world verificados. |
 | T02.a | Concluído | `evidence/T02.a.md`; npm 10.9.9 ci exit 0, lockfile intacto, env 0600 ignorado; commit `6ffae7f`. |
 | T02.c — checks | Concluído | `evidence/T02.c-checks.md`; lint 0 com 40 warnings, typecheck 0, 158 arquivos/1.695 testes, build 0 sem Meta; commit `f8ceb06`. |
@@ -39,7 +40,12 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T07.b2 / callback principal | Concluído | 2d7f9b5; 26 testes; configuração verificada na Evolution e callback real durável em evidence/T08.activation.md. Sem pareamento. |
 | T13.a2b | Concluído | 8133675; reação e broadcast/resume autenticam e retornam 422/no-store sem I/O de negócio/transporte; 9 testes. |
 | T06.guard | Concluído | 23faf20; conta com conexão bloqueada ao aceitar convite, conta vazia aceita; testes TS e SQL rollback conferidos. 60 migrations neste marco. |
-| T09.c1 | Em andamento | SQL de claim/fail/conclusão de conexão, com fencing e isolamento; worker ainda não executado. |
+| T09.c1/c2/c3 | Concluídos para conexão | SQL4401eb8, worker e8fb11f +408 d458c79, cron71af28c; evidência T09.manual.md: token velho40001, recuperação na terceira tentativa, fixture removida. Executor local por minuto ativo. |
+| T07.d | Concluído | 6f7f9ef e4d03e40; health/overview/chip usam DTO Evolution, falha de leitura mostra desconhecido. Dashboard verificado no portal. |
+| T13.a2c | Concluído | 75dc961; launch/status broadcast V1 retornam422 após autenticação/scopes, sem I/O de negócio. |
+| T06.a3 | Em andamento | Tabela de tentativas e guarda de convite em migration aditiva; sem RPC/transporte nesta etapa. |
+| T03.d1 | Em andamento documental | Contrato texto/eventos em fonte fixada; não equivale a resposta observada nem habilita envio. |
+| T13.ui1 | Em andamento | Ocultar navegação/ações sem capacidade e bloquear deep links de templates/broadcast no UI. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
 
@@ -56,4 +62,4 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 
 O usuário solicitou retomada após os agentes atingirem o limite de uso. Os mesmos três agentes LUNA foram reutilizados no Maestri, preservando as alterações parciais. Verificação fresca: nove containers ativos (oito com healthcheck saudável e REST ativo), CRM HTTP 307 para login, Evolution HTTP 200. Serviços e dados locais foram preservados.
 
-Próxima ação exata: concluir e verificar SQL de leases, worker e executor local de conexão; processar o callback real da principal e demonstrar recuperação sem duplicação. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
+Próxima ação exata: fechar persistência de tentativas e bloqueios de UI; obter pareamento/número de homologação para observar contratos de mensagens e avançar transporte de texto. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.

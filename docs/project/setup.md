@@ -1,6 +1,6 @@
 # Setup local WACRM
 
-Estado em 2026-11-16: T02.a, T02.b, T02.c-checks e T02.c-smoke concluídos. O CRM usa Supabase local; Evolution ainda não foi iniciado neste recorte. O bug de signup com sessão imediata foi corrigido no commit `84245f0`, conforme evidência T02.d. O banco de Evolution permanece separado do banco do CRM.
+Estado em 2026-11-16: baseline T02 concluído, CRM com Supabase local e Evolution API 2.3.7 em containers separados. Configuração, QR, callback autenticado e caixa durável estão integrados; o worker de conexão já processou cinco callbacks reais em um lote local. Pareamento e mensagens/mídia continuam pendentes de homologação. O bug de signup com sessão imediata foi corrigido no commit `84245f0`, conforme evidência T02.d.
 
 ## Runtime e instalação
 
@@ -16,7 +16,10 @@ Estado em 2026-11-16: T02.a, T02.b, T02.c-checks e T02.c-smoke concluídos. O CR
 - `NEXT_PUBLIC_APP_LOCALE` = `pt`
 - `NEXT_PUBLIC_SITE_URL` = `http://localhost:3000`
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` = valores da instância local, mantidos apenas em `.env.local`.
-- `ENCRYPTION_KEY` = chave aleatória hexadecimal de 32 bytes, gerada diretamente no arquivo; o valor não é registrado neste documento.
+- `ENCRYPTION_KEY` = chave hexadecimal de 32 bytes preservada entre retomadas; não rotacionar durante a retomada.
+- `EVOLUTION_ALLOWED_ORIGINS` = `http://127.0.0.1:8080`, somente servidor.
+- `EVOLUTION_WEBHOOK_BASE_URL` = `http://host.lima.internal:3000`, somente servidor.
+- `EVOLUTION_EVENTS_CRON_SECRET` = segredo independente gerado localmente para o executor; somente servidor, valor não registrado.
 
 `git check-ignore -v .env.local` confirmou `.gitignore:34:.env*`. O arquivo local não deve ser adicionado ao Git. As chaves foram obtidas do `supabase status` local. `ENCRYPTION_KEY` e as variáveis existentes de locale/site foram preservadas. Nenhuma variável Meta foi criada. Nenhum projeto Supabase remoto foi usado ou vinculado.
 
@@ -26,7 +29,7 @@ Estado em 2026-11-16: T02.a, T02.b, T02.c-checks e T02.c-smoke concluídos. O CR
 - Colima profile `wacrm`: ARM64, 3 vCPU, 4 GiB RAM e disco de dados de 24 GiB. A rede `wacrm-local` publica bindings somente em `127.0.0.1`.
 - Stack mínima ativa: Postgres, Auth, REST, Storage, Realtime e gateway. Studio, Mailpit, postgres-meta, edge-runtime, Logflare, Vector, imgproxy e Supavisor estão excluídos.
 - Configuração: `project_id = "wacrm-local"`, Auth `site_url = "http://localhost:3000"` e confirmação de e-mail desativada somente para este laboratório local.
-- As 57 migrations existentes estão aplicadas; nenhuma migration histórica foi alterada. Não use `db reset` para retomar o ambiente.
+- As 57 migrations de baseline e quatro migrations aditivas Evolution estão aplicadas: 61 neste marco. Nenhuma migration histórica foi alterada. Não use `db reset` para retomar o ambiente.
 
 Para iniciar a partir de um terminal novo, mantendo os volumes locais:
 
@@ -41,6 +44,8 @@ supabase status
 Para parar apenas os serviços Supabase, preservando banco e volumes: `supabase stop`. Para também desligar a VM Colima, depois de parar o Supabase: `colima stop wacrm`. Não execute `colima delete` ou `supabase db reset` para o fluxo normal.
 
 ## Smoke T02.c
+
+O registro abaixo descreve o baseline anterior à integração Evolution; para o fluxo atual, consulte também T07.manual, T08.manual, T08.activation e T09.manual em evidence/.
 
 - Logout real da sessão B seguido de login real como A (`admin@wacrm.local`); a sessão final permanece autenticada como A em `/inbox`.
 - A inbox carregou sem conversas. O estado “WhatsApp não conectado” é esperado; nenhuma configuração, QR code ou mensagem foi usada.
@@ -60,3 +65,35 @@ Para parar apenas os serviços Supabase, preservando banco e volumes: `supabase 
 - `npx --yes npm@10.9.9 run build`: exit 0 com `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321` e chaves sintéticas de baseline apenas no ambiente do processo. Nenhum Supabase foi iniciado ou contatado.
 - Nenhum `META_APP_SECRET` foi passado ao build. A compilação completou sem essa variável; `vitest.config.ts` já fornece valor sintético estrito aos testes, e o webhook requer secret somente quando seu comportamento é exercitado.
 - Saídas completas: `.t02c-logs/{lint,typecheck,test,test-workers2,build}.log`; diretório ignorado localmente. A suíte reportou aviso do loader de configuração Vite (CommonJS/ESM), também registrado na evidência.
+
+## CRM, Evolution e worker local
+
+Para retomar a VM existente e os containers, no diretório do projeto:
+
+```sh
+source "$HOME/.local/share/wacrm-infra-a/env.sh"
+colima --profile wacrm start
+docker ps
+```
+
+O perfil usa os discos existentes. Após a recuperação Infra.d, os nove containers retomaram automaticamente: seis do Supabase e API/Postgres/Redis da Evolution. Se Colima indicar Running mas Docker não responder, consulte evidence/Infra.d.md para o diagnóstico de hostagent residual; não recrie a VM.
+
+Para iniciar o CRM em um terminal:
+
+```sh
+cd /Users/raymozer/Desktop/Projetos/WACRM
+npm run dev -- --hostname 127.0.0.1 --port 3000
+```
+
+Em outro terminal, o executor de eventos de conexão pode ser iniciado com:
+
+```sh
+cd /Users/raymozer/Desktop/Projetos/WACRM
+node scripts/evolution-events-local.mjs
+```
+
+O executor usa a URL fixa local e lê o segredo diretamente de .env.local; não copie o segredo para o comando. Um ciclo isolado é `node scripts/evolution-events-local.mjs --once`: deve imprimir status200 e contagens e terminar com exit0; falha termina com exit1. Sem --once, roda por minuto, aguarda a chamada anterior e não sobrepõe ciclos. Ele só processa CONNECTION_UPDATE neste marco, consultando o estado e concluindo o evento com fencing no banco. Não envia mensagens.
+
+Endereços: CRM http://localhost:3000, configuração/QR http://localhost:3000/settings?tab=whatsapp, Evolution http://127.0.0.1:8080 e Supabase http://127.0.0.1:54321. As credenciais QA ficam nos arquivos privados ignorados .local/dev-credentials.json e .local/dev-credentials-b.json. A chave administrativa Evolution permanece fora do ambiente do CRM.
+
+Para parar o CRM e o executor, use Ctrl+C no respectivo terminal. Para desligar a VM preservando seus discos e volumes, use `colima --profile wacrm stop` no ambiente carregado pelo env.sh. Nenhum desses comandos publica o projeto.
