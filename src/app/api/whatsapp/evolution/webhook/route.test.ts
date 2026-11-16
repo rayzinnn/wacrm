@@ -32,6 +32,12 @@ const PAYLOAD = {
   date_time: '2026-11-16T00:00:00.000Z',
   apikey: 'synthetic-body-api-key',
 }
+const MESSAGE_PAYLOAD = {
+  event: 'messages.upsert',
+  instance: INSTANCE_ID,
+  data: { key: { id: '[SYNTHETIC_MESSAGE_ID]' }, message: { conversation: '[SYNTHETIC_INBOUND_TEXT]' } },
+  apikey: 'synthetic-body-api-key',
+}
 const CONTEXT = { connectionId: CONNECTION_ID, accountId: ACCOUNT_ID, instanceId: INSTANCE_ID }
 const EVENTS = [{ kind: 'connection', eventKey: 'synthetic-event-key', occurredAt: '2026-11-16T00:00:00.000Z' }]
 const MESSAGE_EVENTS = [{
@@ -170,6 +176,19 @@ describe('Evolution public webhook receiver', () => {
     expect(mocks.enqueueEvents).not.toHaveBeenCalled()
   })
 
+  it('authenticates inbound message callbacks before normalization or enqueue', async () => {
+    mocks.authenticateWebhook.mockRejectedValueOnce(new AuthError('webhook_unauthorized'))
+
+    const response = await route.POST(request(JSON.stringify(MESSAGE_PAYLOAD)))
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toMatchObject({ code: 'webhook_unauthorized' })
+    await expectNoStore(response)
+    expect(mocks.authenticateWebhook).toHaveBeenCalledOnce()
+    expect(mocks.normalizeWebhook).not.toHaveBeenCalled()
+    expect(mocks.enqueueEvents).not.toHaveBeenCalled()
+  })
+
   it('returns 400 for an authenticated but malformed known event', async () => {
     mocks.normalizeWebhook.mockImplementationOnce(() => { throw new NormalizeError() })
 
@@ -194,18 +213,19 @@ describe('Evolution public webhook receiver', () => {
     expect(mocks.enqueueEvents).not.toHaveBeenCalled()
   })
 
-  it('ignores normalized inbound messages until the message worker is enabled', async () => {
+  it('enqueues normalized inbound text for durable persistence', async () => {
     mocks.normalizeWebhook.mockReturnValueOnce(MESSAGE_EVENTS as never)
 
-    const response = await route.POST(request(JSON.stringify(PAYLOAD)))
+    const response = await route.POST(request(JSON.stringify(MESSAGE_PAYLOAD)))
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ inserted: 0, duplicates: 0, ignored: true })
+    expect(await response.json()).toEqual({ inserted: 1, duplicates: 0, ignored: false })
     await expectNoStore(response)
-    expect(mocks.enqueueEvents).not.toHaveBeenCalled()
+    expect(mocks.enqueueEvents).toHaveBeenCalledOnce()
+    expect(mocks.enqueueEvents).toHaveBeenCalledWith(CONTEXT.connectionId, MESSAGE_EVENTS)
   })
 
-  it('enqueues only connection events when normalization returns mixed variants', async () => {
+  it('enqueues each normalized event variant returned by the normalizer', async () => {
     mocks.normalizeWebhook.mockReturnValueOnce([...EVENTS, ...MESSAGE_EVENTS] as never)
 
     const response = await route.POST(request(JSON.stringify(PAYLOAD)))
@@ -213,7 +233,58 @@ describe('Evolution public webhook receiver', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ inserted: 1, duplicates: 0, ignored: false })
     expect(mocks.enqueueEvents).toHaveBeenCalledOnce()
-    expect(mocks.enqueueEvents).toHaveBeenCalledWith(CONTEXT.connectionId, EVENTS)
+    expect(mocks.enqueueEvents).toHaveBeenCalledWith(CONTEXT.connectionId, [...EVENTS, ...MESSAGE_EVENTS])
+    await expectNoStore(response)
+  })
+
+  it('waits for durable persistence before acknowledging an inbound message', async () => {
+    let markEnqueueStarted!: () => void
+    const enqueueStarted = new Promise<void>((resolve) => { markEnqueueStarted = resolve })
+    let resolveEnqueue!: (value: { inserted: number; duplicates: number }) => void
+    mocks.normalizeWebhook.mockReturnValueOnce(MESSAGE_EVENTS as never)
+    mocks.enqueueEvents.mockImplementationOnce(() => {
+      markEnqueueStarted()
+      return new Promise((resolve) => { resolveEnqueue = resolve })
+    })
+
+    let settled = false
+    const responsePromise = route.POST(request(JSON.stringify(MESSAGE_PAYLOAD))).then((response) => {
+      settled = true
+      return response
+    })
+    await enqueueStarted
+    await Promise.resolve()
+
+    expect(settled).toBe(false)
+    resolveEnqueue({ inserted: 1, duplicates: 0 })
+    const response = await responsePromise
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ inserted: 1, duplicates: 0, ignored: false })
+    await expectNoStore(response)
+  })
+
+  it('acknowledges an inbound replay as a duplicate after the queue confirms it', async () => {
+    mocks.normalizeWebhook.mockReturnValueOnce(MESSAGE_EVENTS as never)
+    mocks.enqueueEvents.mockResolvedValueOnce({ inserted: 0, duplicates: 1 })
+
+    const response = await route.POST(request(JSON.stringify(MESSAGE_PAYLOAD)))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ inserted: 0, duplicates: 1, ignored: false })
+    expect(mocks.enqueueEvents).toHaveBeenCalledWith(CONTEXT.connectionId, MESSAGE_EVENTS)
+    await expectNoStore(response)
+  })
+
+  it('does not acknowledge an inbound message when durable enqueue fails', async () => {
+    mocks.normalizeWebhook.mockReturnValueOnce(MESSAGE_EVENTS as never)
+    mocks.enqueueEvents.mockRejectedValueOnce(new QueueError())
+
+    const response = await route.POST(request(JSON.stringify(MESSAGE_PAYLOAD)))
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: 'Webhook processing is unavailable.', code: 'webhook_unavailable' })
+    expect(mocks.enqueueEvents).toHaveBeenCalledWith(CONTEXT.connectionId, MESSAGE_EVENTS)
     await expectNoStore(response)
   })
 

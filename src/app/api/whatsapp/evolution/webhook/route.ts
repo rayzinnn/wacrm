@@ -42,12 +42,11 @@ export async function POST(request: Request): Promise<Response> {
     const context = await authenticateWebhook(request.headers, payload)
     const events = normalizeWebhook(payload, receivedAt)
 
-    const queueableEvents = events.filter((event) => event.kind === 'connection')
-    if (queueableEvents.length === 0) {
+    if (events.length === 0) {
       return jsonResponse(200, { inserted: 0, duplicates: 0, ignored: true })
     }
 
-    const counts = await enqueueEvents(context.connectionId, queueableEvents)
+    const counts = await enqueueEvents(context.connectionId, events)
     return jsonResponse(200, { inserted: counts.inserted, duplicates: counts.duplicates, ignored: false })
   } catch (error) {
     if (error instanceof WebhookAuthError) {
