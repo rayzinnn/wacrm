@@ -42,7 +42,9 @@ export class EvolutionError extends Error {
   }
 }
 
-type RequestKind = 'state' | 'connect'
+type RequestKind = 'state' | 'connect' | 'webhook'
+
+const WEBHOOK_CALLBACK_PATH = '/api/whatsapp/evolution/webhook'
 
 function error(
   code: EvolutionErrorCode,
@@ -118,9 +120,61 @@ function validateCredentials(credentials: EvolutionCredentials): string {
   return assertAllowedEvolutionOrigin(credentials.baseUrl)
 }
 
+function expectedWebhookCallbackUrl(): string {
+  const configuredBaseUrl = process.env.EVOLUTION_WEBHOOK_BASE_URL
+  if (!configuredBaseUrl || configuredBaseUrl.includes('*')) {
+    throw error('invalid_origin', 'Evolution webhook callback origin is invalid.')
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(configuredBaseUrl)
+  } catch {
+    throw error('invalid_origin', 'Evolution webhook callback origin is invalid.')
+  }
+
+  if (
+    (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.pathname !== '/' ||
+    parsed.search !== '' ||
+    parsed.hash !== ''
+  ) {
+    throw error('invalid_origin', 'Evolution webhook callback origin is invalid.')
+  }
+
+  const origin = parsed.origin
+  if (!origin.startsWith('https://') && origin !== 'http://host.lima.internal:3000') {
+    throw error('origin_not_allowed', 'Evolution webhook callback origin is not operated.')
+  }
+
+  return `${origin}${WEBHOOK_CALLBACK_PATH}`
+}
+
+function validateWebhookCallback(callbackUrl: string, webhookSecret: string, connectionId: string): string {
+  const expectedCallbackUrl = expectedWebhookCallbackUrl()
+  if (callbackUrl !== expectedCallbackUrl) {
+    throw error('invalid_origin', 'Evolution webhook callback URL is not the configured endpoint.')
+  }
+  if (
+    typeof webhookSecret !== 'string' ||
+    webhookSecret.length === 0 ||
+    /[\r\n]/.test(webhookSecret) ||
+    typeof connectionId !== 'string' ||
+    connectionId.length === 0 ||
+    /[\r\n]/.test(connectionId)
+  ) {
+    throw error('invalid_credentials', 'Evolution webhook credentials are invalid.')
+  }
+
+  return expectedCallbackUrl
+}
+
 function getUrl(credentials: EvolutionCredentials, kind: RequestKind): string {
   const origin = validateCredentials(credentials)
   const instanceName = encodeURIComponent(credentials.instanceId)
+  if (kind === 'webhook') return `${origin}/webhook/set/${instanceName}`
   const route = kind === 'state' ? 'connectionState' : 'connect'
   return `${origin}/instance/${route}/${instanceName}`
 }
@@ -274,5 +328,79 @@ export async function connectSession(credentials: EvolutionCredentials): Promise
       retryable: false,
       ambiguous: true,
     })
+  }
+}
+
+export async function configureWebhook(
+  credentials: EvolutionCredentials,
+  callbackUrl: string,
+  webhookSecret: string,
+  connectionId: string,
+): Promise<void> {
+  const url = getUrl(credentials, 'webhook')
+  const callback = validateWebhookCallback(callbackUrl, webhookSecret, connectionId)
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        apikey: credentials.token,
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: callback,
+          headers: {
+            'x-wacrm-connection': connectionId,
+            'x-wacrm-webhook-secret': webhookSecret,
+          },
+          byEvents: false,
+          base64: false,
+          events: ['CONNECTION_UPDATE'],
+        },
+      }),
+      signal: controller.signal,
+      redirect: 'manual',
+    })
+
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+      throw error('redirect_blocked', 'Evolution redirect was blocked.', {
+        httpStatus: response.status,
+        ambiguous: true,
+      })
+    }
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw error('unauthorized', 'Evolution authentication failed.', { httpStatus: response.status })
+      }
+      throw error('http_error', 'Evolution request was rejected.', {
+        httpStatus: response.status,
+        retryable: false,
+        ambiguous: response.status >= 500,
+      })
+    }
+  } catch (cause) {
+    if (cause instanceof EvolutionError) throw cause
+    const aborted = cause instanceof Error && cause.name === 'AbortError'
+    if (timedOut || aborted) {
+      throw error('timeout', 'Evolution webhook configuration timed out.', {
+        retryable: false,
+        ambiguous: true,
+      })
+    }
+    throw error('network_error', 'Evolution webhook configuration failed.', {
+      retryable: false,
+      ambiguous: true,
+    })
+  } finally {
+    clearTimeout(timeout)
   }
 }

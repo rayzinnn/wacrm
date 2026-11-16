@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { EvolutionError, assertAllowedEvolutionOrigin, connectSession, getSession } from './client'
+import { EvolutionError, assertAllowedEvolutionOrigin, configureWebhook, connectSession, getSession } from './client'
 import { getEvolutionCapabilities } from './capabilities'
 import type { EvolutionCredentials } from './types'
 
@@ -31,6 +31,7 @@ const statePayload = (state: unknown) => ({ instance: { instanceName: 'wacrm-loc
 
 beforeEach(() => {
   vi.stubEnv('EVOLUTION_ALLOWED_ORIGINS', 'http://127.0.0.1:8080')
+  vi.stubEnv('EVOLUTION_WEBHOOK_BASE_URL', 'http://host.lima.internal:3000')
   vi.stubGlobal('fetch', vi.fn())
 })
 
@@ -317,6 +318,121 @@ describe('connectSession', () => {
     expect(error).toBeInstanceOf(EvolutionError)
     expect(error.code).toBe('invalid_instance')
     expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('configureWebhook', () => {
+  const callbackUrl = 'http://host.lima.internal:3000/api/whatsapp/evolution/webhook'
+
+  it('posts only the observed connection webhook configuration with authenticated headers', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }))
+
+    await configureWebhook(credentials, callbackUrl, 'webhook-secret-123', 'connection-id-456')
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+      'http://127.0.0.1:8080/webhook/set/wacrm-local',
+    )
+    const init = vi.mocked(fetch).mock.calls[0][1]
+    expect(init).toMatchObject({
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        apikey: 'restricted-test-token',
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+    })
+    expect(JSON.parse(String(init?.body))).toEqual({
+      webhook: {
+        enabled: true,
+        url: callbackUrl,
+        headers: {
+          'x-wacrm-connection': 'connection-id-456',
+          'x-wacrm-webhook-secret': 'webhook-secret-123',
+        },
+        byEvents: false,
+        base64: false,
+        events: ['CONNECTION_UPDATE'],
+      },
+    })
+  })
+
+  it('rejects callback URLs other than the configured operated origin before fetch', async () => {
+    const error = await configureWebhook(
+      credentials,
+      'http://attacker.invalid/api/whatsapp/evolution/webhook',
+      'webhook-secret-123',
+      'connection-id-456',
+    ).catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(EvolutionError)
+    expect(error).toMatchObject({ code: 'invalid_origin', httpStatus: null, retryable: false })
+    expect(error.message).not.toContain('attacker.invalid')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('reports provider authentication failure without exposing credentials or body', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('private auth response', { status: 401 }))
+
+    const error = await configureWebhook(
+      credentials,
+      callbackUrl,
+      'webhook-secret-123',
+      'connection-id-456',
+    ).catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(EvolutionError)
+    expect(error).toMatchObject({ code: 'unauthorized', httpStatus: 401, retryable: false, ambiguous: false })
+    expect(error.message).not.toContain('private auth response')
+    expect(error.message).not.toContain('restricted-test-token')
+    expect(error.message).not.toContain('webhook-secret-123')
+  })
+
+  it('marks a timed out webhook update ambiguous and makes one request', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('private response', 'AbortError')))
+    }))
+
+    const pending = configureWebhook(
+      credentials,
+      callbackUrl,
+      'webhook-secret-123',
+      'connection-id-456',
+    ).then(
+      () => ({ ok: true as const }),
+      (cause) => ({ error: cause as unknown }),
+    )
+    await vi.advanceTimersByTimeAsync(15_000)
+    const result = await pending
+
+    expect('error' in result && result.error).toBeInstanceOf(EvolutionError)
+    const error = 'error' in result ? result.error as EvolutionError : null
+    expect(error).toMatchObject({ code: 'timeout', httpStatus: null, retryable: false, ambiguous: true })
+    expect(error?.message).not.toContain('private response')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('blocks redirects without reading or exposing the response body', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('private redirect response', {
+      status: 302,
+      headers: { location: 'https://elsewhere.invalid' },
+    }))
+
+    const error = await configureWebhook(
+      credentials,
+      callbackUrl,
+      'webhook-secret-123',
+      'connection-id-456',
+    ).catch((cause) => cause)
+
+    expect(error).toBeInstanceOf(EvolutionError)
+    expect(error).toMatchObject({ code: 'redirect_blocked', httpStatus: 302, retryable: false, ambiguous: true })
+    expect(error.message).not.toContain('private redirect response')
+    expect(vi.mocked(fetch).mock.calls[0][1]).toMatchObject({ redirect: 'manual' })
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })
 
