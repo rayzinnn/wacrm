@@ -5,7 +5,6 @@ export const INBOX_FILTERS = [
   "unread",
   "waiting",
   "unassigned",
-  "expiring",
   "open",
   "pending",
   "closed",
@@ -13,10 +12,8 @@ export const INBOX_FILTERS = [
 
 export type InboxFilter = (typeof INBOX_FILTERS)[number];
 
-const WINDOW_MS = 24 * 60 * 60 * 1000;
-const EXPIRING_WITHIN_MS = 2 * 60 * 60 * 1000;
-
 export function parseInboxFilter(raw: string | null | undefined): InboxFilter {
+  if (raw === "expiring") return "waiting";
   return (INBOX_FILTERS as readonly string[]).includes(raw ?? "")
     ? (raw as InboxFilter)
     : "all";
@@ -28,12 +25,6 @@ export function isAwaitingReply(c: Conversation): boolean {
   return new Date(c.last_reply_at).getTime() < new Date(c.last_inbound_at).getTime();
 }
 
-export function isWindowClosing(c: Conversation, now: number): boolean {
-  if (!isAwaitingReply(c) || !c.last_inbound_at) return false;
-  const closesAt = new Date(c.last_inbound_at).getTime() + WINDOW_MS;
-  return closesAt > now && closesAt - now <= EXPIRING_WITHIN_MS;
-}
-
 function byOldestInbound(a: Conversation, b: Conversation): number {
   return (a.last_inbound_at ?? "").localeCompare(b.last_inbound_at ?? "");
 }
@@ -41,7 +32,6 @@ function byOldestInbound(a: Conversation, b: Conversation): number {
 export function applyInboxFilter(
   conversations: Conversation[],
   filter: InboxFilter,
-  now: number,
 ): Conversation[] {
   switch (filter) {
     case "all":
@@ -50,8 +40,6 @@ export function applyInboxFilter(
       return conversations.filter((c) => c.unread_count > 0);
     case "waiting":
       return conversations.filter(isAwaitingReply).sort(byOldestInbound);
-    case "expiring":
-      return conversations.filter((c) => isWindowClosing(c, now)).sort(byOldestInbound);
     case "unassigned":
       return conversations.filter((c) => c.status === "open" && !c.assigned_agent_id);
     default:

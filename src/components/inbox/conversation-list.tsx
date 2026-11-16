@@ -60,7 +60,6 @@ export function ConversationList({
     { label: t("filterUnread"), value: "unread" },
     { label: t("filterWaiting"), value: "waiting" },
     { label: t("filterUnassigned"), value: "unassigned" },
-    { label: t("filterExpiring"), value: "expiring" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
@@ -68,12 +67,6 @@ export function ConversationList({
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>(initialFilter);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(id);
-  }, []);
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -168,7 +161,7 @@ export function ConversationList({
   }, [tags]);
 
   const filtered = useMemo(() => {
-    let result = applyInboxFilter(conversations, filter, now);
+    let result = applyInboxFilter(conversations, filter);
 
     // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
@@ -191,7 +184,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, now, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>

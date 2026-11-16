@@ -3,7 +3,6 @@ import type { Conversation } from "@/types";
 import {
   applyInboxFilter,
   isAwaitingReply,
-  isWindowClosing,
   parseInboxFilter,
 } from "./inbox-filters";
 
@@ -24,9 +23,9 @@ function conv(id: string, patch: Partial<Conversation> = {}): Conversation {
 }
 
 describe("parseInboxFilter", () => {
-  it("accepts every known filter and falls back to all", () => {
+  it("accepts supported filters, maps legacy expiring links to waiting, and falls back to all", () => {
     expect(parseInboxFilter("waiting")).toBe("waiting");
-    expect(parseInboxFilter("expiring")).toBe("expiring");
+    expect(parseInboxFilter("expiring")).toBe("waiting");
     expect(parseInboxFilter("bogus")).toBe("all");
     expect(parseInboxFilter(null)).toBe("all");
   });
@@ -50,20 +49,6 @@ describe("isAwaitingReply", () => {
   });
 });
 
-describe("isWindowClosing", () => {
-  it("flags waiting chats whose 24 h window ends within 2 h", () => {
-    expect(isWindowClosing(conv("a", { last_inbound_at: ago(23 * 60) }), NOW)).toBe(true);
-    expect(isWindowClosing(conv("b", { last_inbound_at: ago(20 * 60) }), NOW)).toBe(false);
-    expect(isWindowClosing(conv("c", { last_inbound_at: ago(25 * 60) }), NOW)).toBe(false);
-  });
-
-  it("ignores chats that already got a reply", () => {
-    expect(
-      isWindowClosing(conv("a", { last_inbound_at: ago(23 * 60), last_reply_at: ago(60) }), NOW),
-    ).toBe(false);
-  });
-});
-
 describe("applyInboxFilter", () => {
   const list = [
     conv("recent", { last_inbound_at: ago(5) }),
@@ -74,22 +59,27 @@ describe("applyInboxFilter", () => {
   ];
 
   it("lists waiting chats oldest first", () => {
-    expect(applyInboxFilter(list, "waiting", NOW).map((c) => c.id)).toEqual(["old", "recent"]);
+    expect(applyInboxFilter(list, "waiting").map((c) => c.id)).toEqual(["old", "recent"]);
+  });
+
+  it("keeps legacy expiring links focused on unanswered conversations", () => {
+    const legacyFilter = parseInboxFilter("expiring");
+    expect(applyInboxFilter(list, legacyFilter).map((c) => c.id)).toEqual(["old", "recent"]);
   });
 
   it("lists open chats nobody is assigned to", () => {
-    expect(applyInboxFilter(list, "unassigned", NOW).map((c) => c.id)).toEqual(["recent", "answered"]);
+    expect(applyInboxFilter(list, "unassigned").map((c) => c.id)).toEqual(["recent", "answered"]);
   });
 
   it("keeps the existing unread and status filters", () => {
-    expect(applyInboxFilter(list, "unread", NOW).map((c) => c.id)).toEqual(["unread"]);
-    expect(applyInboxFilter(list, "pending", NOW).map((c) => c.id)).toEqual(["pending"]);
-    expect(applyInboxFilter(list, "all", NOW)).toBe(list);
+    expect(applyInboxFilter(list, "unread").map((c) => c.id)).toEqual(["unread"]);
+    expect(applyInboxFilter(list, "pending").map((c) => c.id)).toEqual(["pending"]);
+    expect(applyInboxFilter(list, "all")).toBe(list);
   });
 
   it("does not reorder the caller's array", () => {
     const before = list.map((c) => c.id);
-    applyInboxFilter(list, "waiting", NOW);
+    applyInboxFilter(list, "waiting");
     expect(list.map((c) => c.id)).toEqual(before);
   });
 });
