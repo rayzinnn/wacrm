@@ -67,6 +67,16 @@ interface AppliedEffect {
   result: unknown;
 }
 
+interface DispatchStepLedger {
+  id: string;
+  dispatch_id: string;
+  action_key: string;
+  state: string;
+  lease_token: string | null;
+  request_id: string;
+  send_attempt_id: string | null;
+}
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -283,7 +293,8 @@ export async function executeEvolutionAutomationStep(input: {
 
   const claim = oneRow<StepClaim>(claimData, 'claim');
   if (
-    claim.step_id !== stepId ||
+    typeof claim.step_id !== 'string' ||
+    !UUID_PATTERN.test(claim.step_id) ||
     typeof claim.should_execute !== 'boolean' ||
     !['pending', 'processing', 'done', 'skipped', 'failed', 'unknown'].includes(
       claim.state
@@ -294,10 +305,43 @@ export async function executeEvolutionAutomationStep(input: {
       'Claim did not match the step'
     );
   }
+
+  const { data: ledgerData, error: ledgerError } = await db
+    .from('evolution_dispatch_steps')
+    .select(
+      'id,dispatch_id,action_key,state,lease_token,request_id,send_attempt_id'
+    )
+    .eq('id', claim.step_id)
+    .eq('dispatch_id', root.id)
+    .eq('action_key', stepId)
+    .maybeSingle();
+  if (ledgerError || !ledgerData) {
+    throw new EvolutionAutomationStepError(
+      'claim_lineage_invalid',
+      'Claim does not belong to the requested dispatch action'
+    );
+  }
+  const ledger = ledgerData as DispatchStepLedger;
+  if (
+    ledger.id !== claim.step_id ||
+    ledger.dispatch_id !== root.id ||
+    ledger.action_key !== stepId ||
+    ledger.state !== claim.state ||
+    ledger.lease_token !== claim.lease_token ||
+    ledger.request_id !== `evolution-step:${ledger.id}` ||
+    ledger.request_id !== claim.request_id ||
+    ledger.send_attempt_id !== claim.send_attempt_id
+  ) {
+    throw new EvolutionAutomationStepError(
+      'claim_lineage_invalid',
+      'Claim does not match its persisted dispatch step'
+    );
+  }
+
   if (!claim.should_execute) {
     return {
       executed: false,
-      step_id: claim.step_id,
+      step_id: ledger.id,
       state: claim.state,
       request_id: claim.request_id,
       send_attempt_id: claim.send_attempt_id,
@@ -319,7 +363,7 @@ export async function executeEvolutionAutomationStep(input: {
     {
       p_dispatch_id: root.id,
       p_dispatch_lease_token: root.lease_token,
-      p_step_id: claim.step_id,
+      p_step_id: ledger.id,
       p_step_lease_token: claim.lease_token,
       p_operation: operation,
       p_payload: payload,
@@ -333,7 +377,7 @@ export async function executeEvolutionAutomationStep(input: {
   }
 
   const effect = oneRow<AppliedEffect>(effectData, 'effect');
-  if (effect.step_id !== stepId || effect.state !== 'done') {
+  if (effect.step_id !== ledger.id || effect.state !== 'done') {
     throw new EvolutionAutomationStepError(
       'effect_response_invalid',
       'Evolution automation effect did not complete the claimed step'
