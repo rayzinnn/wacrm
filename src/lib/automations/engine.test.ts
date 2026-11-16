@@ -1176,6 +1176,67 @@ describe("wait_for_reply", () => {
       expect(h.state.pending[0]).toMatchObject({ status: "pending", claimed_at: null });
     });
 
+    it("claims and requeues only rows without an Evolution step link", async () => {
+      const staleClaim = new Date(Date.now() - 2 * STALLED_CLAIM_MS).toISOString();
+      h.state.pending = [
+        { id: "legacy-pending", status: "pending", evolution_dispatch_step_id: null },
+        { id: "evolution-pending", status: "pending", evolution_dispatch_step_id: "step-1" },
+        { id: "legacy-running", status: "running", claimed_at: staleClaim, evolution_dispatch_step_id: null },
+        { id: "evolution-running", status: "running", claimed_at: staleClaim, evolution_dispatch_step_id: "step-2" },
+      ];
+
+      expect(await claimPendingExecution("legacy-pending")).toBe(true);
+      expect(await claimPendingExecution("evolution-pending")).toBe(false);
+      expect(await requeueStalledExecutions()).toBe(1);
+      expect(h.state.pending).toMatchObject([
+        { id: "legacy-pending", status: "running" },
+        { id: "evolution-pending", status: "pending", evolution_dispatch_step_id: "step-1" },
+        { id: "legacy-running", status: "pending", claimed_at: null },
+        { id: "evolution-running", status: "running", evolution_dispatch_step_id: "step-2" },
+      ]);
+    });
+
+    it("expires only legacy awaiting-reply rows", async () => {
+      h.state.pending = [
+        {
+          id: "legacy-reply",
+          status: "awaiting_reply",
+          run_at: new Date(Date.now() - 1000).toISOString(),
+          log_id: "legacy-log",
+          evolution_dispatch_step_id: null,
+        },
+        {
+          id: "evolution-reply",
+          status: "awaiting_reply",
+          run_at: new Date(Date.now() - 1000).toISOString(),
+          log_id: "evolution-log",
+          evolution_dispatch_step_id: "step-3",
+        },
+      ];
+
+      expect(await expireAwaitingReplies()).toBe(1);
+      expect(h.state.pending.map((row) => row.status)).toEqual(["expired", "awaiting_reply"]);
+      expect(h.state.logUpdates).toEqual([{ error_message: "no reply within 24h" }]);
+    });
+
+    it("does not resume an Evolution-owned awaiting reply", async () => {
+      h.state.pending = [
+        {
+          id: "evolution-reply",
+          automation_id: "a1",
+          account_id: ACCOUNT,
+          contact_id: "c1",
+          status: "awaiting_reply",
+          run_at: new Date(Date.now() + 60_000).toISOString(),
+          evolution_dispatch_step_id: "step-3",
+        },
+      ];
+
+      expect(await reply("hello")).toBe(false);
+      expect(h.state.pending[0].status).toBe("awaiting_reply");
+      expect(h.state.fromCalls).toContain("automation_pending_executions");
+    });
+
     it("never requeues a reply run claimed by the webhook", async () => {
       h.state.pending.push({ id: "r1", status: "running", claimed_at: null });
 

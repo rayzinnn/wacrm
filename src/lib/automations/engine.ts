@@ -244,6 +244,7 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
     const { data: rows, error } = await db
       .from('automation_pending_executions')
       .select('*')
+      .is('evolution_dispatch_step_id', null)
       .eq('account_id', input.accountId)
       .eq('contact_id', input.contactId)
       .eq('status', 'awaiting_reply')
@@ -263,6 +264,7 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
       .from('automation_pending_executions')
       .update({ status: 'running' })
       .eq('id', pending.id)
+      .is('evolution_dispatch_step_id', null)
       .eq('status', 'awaiting_reply')
       .select('id')
       .maybeSingle()
@@ -330,6 +332,7 @@ export async function expireAwaitingReplies(now: Date = new Date()): Promise<num
   const { data, error } = await db
     .from('automation_pending_executions')
     .update({ status: 'expired' })
+    .is('evolution_dispatch_step_id', null)
     .eq('status', 'awaiting_reply')
     .lte('run_at', now.toISOString())
     .select('id, log_id')
@@ -393,6 +396,7 @@ export async function claimPendingExecution(id: string, now: Date = new Date()):
     .from('automation_pending_executions')
     .update({ status: 'running', claimed_at: now.toISOString() })
     .eq('id', id)
+    .is('evolution_dispatch_step_id', null)
     .eq('status', 'pending')
     .select('id')
     .maybeSingle()
@@ -404,6 +408,7 @@ export async function requeueStalledExecutions(now: Date = new Date()): Promise<
     .from('automation_pending_executions')
     .update({ status: 'pending', claimed_at: null })
     .eq('status', 'running')
+    .is('evolution_dispatch_step_id', null)
     .lt('claimed_at', new Date(now.getTime() - STALLED_CLAIM_MS).toISOString())
     .select('id')
   if (error) {
@@ -1239,4 +1244,5 @@ async function markPending(id: string, status: 'done' | 'failed' | 'expired') {
     .from('automation_pending_executions')
     .update({ status })
     .eq('id', id)
+    .is('evolution_dispatch_step_id', null)
 }

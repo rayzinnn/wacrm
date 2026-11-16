@@ -45,6 +45,7 @@ export async function GET(request: Request) {
   const { data: due, error } = await admin
     .from('automation_pending_executions')
     .select('*')
+    .is('evolution_dispatch_step_id', null)
     .eq('status', 'pending')
     .lte('run_at', new Date().toISOString())
     .order('run_at', { ascending: true })
