@@ -35,10 +35,10 @@ export function SetupChecklist({ setup }: { setup: OverviewSetup }) {
           </div>
           <ol className="divide-y divide-border">
             {steps.map((s) => (
-              <li key={s.id} className="flex items-center gap-3 py-3">
+              <li key={s.id} className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-3 sm:flex sm:items-center">
                 <span
                   className={cn(
-                    'flex size-6 shrink-0 items-center justify-center rounded-full border',
+                    'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border sm:mt-0',
                     s.done ? 'border-status-good bg-status-good text-white' : 'border-border',
                   )}
                 >
@@ -54,7 +54,7 @@ export function SetupChecklist({ setup }: { setup: OverviewSetup }) {
                 {!s.done ? (
                   <Link
                     href={s.href}
-                    className={buttonVariants({ variant: s.id === nextId ? 'default' : 'outline', size: 'sm' })}
+                    className={cn(buttonVariants({ variant: s.id === nextId ? 'default' : 'outline', size: 'sm' }), 'col-start-2 w-fit sm:shrink-0')}
                   >
                     {t(`steps.${s.id}.action`)}
                   </Link>

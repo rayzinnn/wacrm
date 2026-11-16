@@ -98,6 +98,7 @@
   flex: 0 0 auto;
   max-width: 100%;
   overflow-x: auto;
+  justify-content: flex-start;
   margin-inline: 1.5rem;
   padding: 0.25rem;
   border: 1px solid var(--border);
@@ -161,13 +162,13 @@
   }
 
   .contacts-page-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+    display: flex;
+    flex-wrap: wrap;
   }
 
   .contacts-page-actions > button {
     min-width: 0;
-    white-space: normal;
+    white-space: nowrap;
   }
 
   .contacts-command-surface {
@@ -184,6 +185,7 @@
 
   .contact-detail-tabs {
     margin-inline: 1rem;
+    width: calc(100% - 2rem);
   }
 
   .contact-detail-panel {

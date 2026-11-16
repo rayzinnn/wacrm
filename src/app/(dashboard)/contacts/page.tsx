@@ -374,7 +374,7 @@ export default function ContactsPage() {
             <Button
               variant="outline"
               onClick={() => setCustomFieldsOpen(true)}
-              className="border-border text-muted-foreground hover:bg-muted"
+              className="shrink-0 border-border text-muted-foreground hover:bg-muted"
             >
               <SlidersHorizontal className="size-4" />
               {t('customFieldsBtn')}
@@ -385,7 +385,7 @@ export default function ContactsPage() {
             canAct={canEdit}
             gateReason={tGate('reasons.addOrImportContacts')}
             onClick={() => setImportOpen(true)}
-            className="border-border text-muted-foreground hover:bg-muted"
+            className="shrink-0 border-border text-muted-foreground hover:bg-muted"
           >
             <Upload className="size-4" />
             {t('importBtn')}
@@ -394,7 +394,7 @@ export default function ContactsPage() {
             canAct={canEdit}
             gateReason={tGate('reasons.addOrImportContacts')}
             onClick={openAddForm}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            className="shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             <Plus className="size-4" />
             {t('addContactBtn')}
