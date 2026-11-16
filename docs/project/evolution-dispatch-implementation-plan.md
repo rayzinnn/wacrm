@@ -146,12 +146,12 @@ fencing/event checkpoint do novo contrato.
 
 O schema base já contém `flow_runs`, `flow_run_events`, `transition_seq` em
 `flow_runs` (migration `052_flow_run_integrity.sql`) e índices de run ativo.
-Mas faltam alterações de schema T12 para `flow_run_events.evolution_event_id`,
+As alterações de schema T12 para `flow_run_events.evolution_event_id`,
 `flow_run_events.transition_seq` e os índices parciais
 `flow_run_events_reply_event_key` e
 `flow_run_events_evolution_transition_key` descritos em
-`schema-contract.md`. Sem esses checkpoints, não portar reply/advance para o
-worker.
+`schema-contract.md` foram aplicadas no banco local e testadas com rollback.
+A RPC de transição ainda falta; não portar reply/advance para o worker antes dela.
 
 ### AI e handoff
 
@@ -227,11 +227,10 @@ Meta `wamid` como idempotency key.
 4. **Flow local e replies.** Implementar roots/run start e transições com
    `complete_evolution_flow_transition`, primeiro para `start`, `condition`,
    `set_tag` e `end`; só então receber `reply_received` com evento Evolution
-   deduplicado. **Lacunas:** RPC ausente e colunas/índices T12 de
-   `flow_run_events` ausentes. **Teste:** mesmo evento repetido, sequência
+   deduplicado. **Lacuna:** RPC de transição ausente; colunas/índices T12 de
+   `flow_run_events` já aplicados no banco local. **Teste:** mesmo evento repetido, sequência
    esperada/stale, duas replies concorrentes, mudança terminal e lineage da
-   conta. Não aceitar flows em andamento enquanto a tabela de checkpoints não
-   tiver migrado.
+   conta. Não aceitar flows em andamento até testar a transição atômica.
 5. **Texto Flow e coleta de entrada.** Portar `send_message` e prompt de
    `collect_input` pela mesma reserva Evolution e teste de crash; checkpoint do
    prompt e estado suspenso devem ser coerentes com resultado do envio. Sem
@@ -276,12 +275,11 @@ Meta `wamid` como idempotency key.
 ## Lacunas consolidadas
 
 Ausentes no estado atual das migrations, embora descritos em
-`schema-contract.md`: implementação de `wait_for_reply` na
-`apply_evolution_automation_effect`, `complete_evolution_flow_transition`,
-`claim_ai_reply_slot_for_dispatch`, `complete_evolution_ai_handoff`;
-colunas/índices Evolution em `flow_run_events`. A coluna/UNIQUE de step em
-`automation_pending_executions` já foi aplicada no banco local. Confirmar cada
-item restante por migration/teste antes
+`schema-contract.md`: retomada de `wait_for_reply`,
+`complete_evolution_flow_transition`, `claim_ai_reply_slot_for_dispatch` e
+`complete_evolution_ai_handoff`. O estacionamento de `wait_for_reply`, as
+colunas/índices Evolution de `flow_run_events` e o vínculo único da fila ao
+step foram aplicados no banco local. Confirmar cada item restante por migration/teste antes
 de qualquer worker integrar o caminho correspondente. `condition` e
 `close_conversation` também precisam de definição de execução; não inferir
 operação SQL de `p_payload`. O contrato atual de root completion não aceita
