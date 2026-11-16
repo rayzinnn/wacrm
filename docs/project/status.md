@@ -1,6 +1,7 @@
 # Status WACRM
 
 Escopo vigente: CRM em localhost com Evolution API local, conforme instrução do usuário em 15/11/2026. O adendo `docs/superpowers/plans/2026-11-15-evolution-local.md` prevalece sobre referências UAZAPI nos planos originais, que continuam preservados.
+Decisão de 16/11/2026: WACRM e SIS serão vendidos juntos, porém funcionarão separadamente; este trabalho transfere somente a identidade visual da SIS para o CRM.
 
 Raiz: `/Users/raymozer/Desktop/Projetos/WACRM`.
 Branch: `feat/uazapi-only` (nome original de T01; provedor vigente é Evolution).
@@ -46,6 +47,8 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T13.a2c | Concluído | 75dc961; launch/status broadcast V1 retornam422 após autenticação/scopes, sem I/O de negócio. |
 | T13 — bloqueio de envio automático Meta | Concluído como barreira temporária | 7d489e5; três senders de automação falham antes de DB/Graph; três testes focados e lint passaram. Texto automático permanece indisponível até T12 integrar Evolution. |
 | T13 — leitores ativos de configuração | Concluído no recorte | 12c88c9; Inbox usa status Evolution autenticado e auditoria da API v1 usa proprietário da conta, sem leitura de whatsapp_config. 45 testes focados e lint passaram; QA no navegador/typecheck final pendentes. |
+| T13 — broadcast no MCP | Concluído no recorte | 5bc9cfc; ferramentas e flag de descoberta de broadcast removidas, texto/contatos preservados. Cinco testes focados; endpoint V1 já retornava 422. |
+| T13 — proxy antigo de mídia | Concluído como barreira temporária | 89f0015; GET autenticado/limitado responde 503 sem cache, não consulta whatsapp_config nem Graph; erro sanitizado, seis testes focados e lint passaram. Mídia histórica indisponível até T11 substituir por leitura privada. |
 | T14 — fotografia de estabilidade local | Concluído como diagnóstico | Nove containers ativos; Next, Auth e Evolution responderam em localhost, com latência variável até cerca de 9 s. Cron local ativo; não houve 503 nesta rodada. Causa interna da lentidão ainda não confirmada; checks finais serão serializados. |
 | T06.a3 | Concluído | 2b40adf; tabela de tentativas + guarda de convite, SQL rollback e 6 testes da cobertura de convite. 62 migrations; RPC/transporte ainda pendentes. |
 | T03.d1 | Concluído documental | 9df1cc9; contrato texto/eventos em fonte fixada; observação posterior em T03.e1. |
@@ -90,7 +93,10 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T12 — claim de execução | Concluído no banco local | b86aac3; roots de automação/flow/IA têm reserva concorrente com lease/token, SQL rollback-only e corrida 6+6. Ledger de passos adicionado no recorte seguinte; conclusão e execução dos motores ainda pendentes. |
 | T12 — ledger de passos | Concluído no banco local | f808363; tabela de passos e vínculo único com logs de automação, RLS/constraints e teste SQL rollback-only. Claim/conclusão de passos e motores ainda pendentes. |
 | T12 — reserva/conclusão de passos | Concluído no banco local | daa598f; RPCs com lease/token, chave estável, isolamento por conta e bloqueio de reenvio após reserva; teste SQL rollback-only e corrida de duas sessões passaram. Execução dos motores ainda pendente. |
+| T12 — conclusão de raízes | Concluído no banco local | 811fe69; RPC de conclusão com lease/token, sem passos ativos e com isolamento por conta. Teste SQL rollback-only e duas ordens de corrida passaram; aplicação/registro no Postgres local confirmados. Worker e motores ainda pendentes. |
+| T12 — mapa de integração dos motores | Concluído no planejamento técnico | 6db6717; raízes, passos, logs, waits, texto Evolution e lacunas de SQL/worker ordenados em recortes. Nenhum motor foi executado; início de raízes, efeitos locais, flows e IA ainda dependem de implementação. |
 | T11a — leitura protegida de mídia | Concluído no módulo isolado | 2e1aba4; resolver com origem controlada, limites, MIME/assinatura e erros sanitizados; 21 testes mockados e lint passaram. Sem rede real, Storage, UI ou capability de mídia; DNS/egress e integração continuam pendentes. |
+| T11b — referência e fila de mídia | Concluído no recorte | 2bf538c; normaliza apenas chave versionada para imagem/documento/áudio/vídeo, sem bytes/URL/caption; tipos desativados terminam `unsupported_media_kind`. 66 testes focados e lint passaram; capability real segue vazia, sem download/Storage/worker de mídia. |
 | T13.ui1 | Concluído | e4432c6; navegação e deep links bloqueados, 10 testes i18n/lint/typecheck e portal verificados. |
 | T14 — checks do marco | Concluídos neste recorte | evidence/T14.local-milestone.md: 174 arquivos/1.856 testes, lint 0 com 37 warnings, typecheck 0, build 0. Não conclui T14 da migração inteira. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
