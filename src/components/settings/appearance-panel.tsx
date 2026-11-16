@@ -97,7 +97,7 @@ function ModeCard({
       aria-checked={isActive}
       aria-label={t("useMode", { mode })}
       className={cn(
-        "flex min-h-16 items-center gap-3 rounded-xl border bg-background p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+        "grid min-h-16 min-w-0 grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-x-2 gap-y-2 rounded-xl border bg-background p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card sm:flex sm:items-center sm:gap-3 sm:p-4",
         isActive
           ? "border-primary/60 ring-2 ring-primary/40"
           : "border-border hover:border-border hover:bg-muted/40",
@@ -109,11 +109,11 @@ function ModeCard({
       >
         <Icon className="h-4 w-4" />
       </span>
-      <span className="flex-1 text-sm font-semibold capitalize text-foreground">
+      <span className="min-w-0 text-sm font-semibold capitalize text-foreground sm:flex-1">
         {mode}
       </span>
       {isActive && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
+        <span className="col-span-2 inline-flex w-fit max-w-full items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary sm:col-auto">
           <Check className="h-3 w-3" />
           {t("active")}
         </span>
