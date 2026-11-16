@@ -26,9 +26,13 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T05.a1 | Concluído | `evidence/T05.a1.md`; cliente de estado/QR e origem segura, 32 testes e typecheck; commit `a0b984b`. Texto/mídia ainda não implementados. |
 | T06.a1 | Concluído | `evidence/T06.a1.md`; migration real `20261116040603_whatsapp_connections.sql`, isolamento SQL aprovado; commit `ac5ec8f`. |
 | T06.b1 | Concluído | `evidence/T06.b1.md`; 17 testes e typecheck, store revisado; commit `b9f3fb9`. |
-| T07.a/b | Em andamento | Quartzo substitui config GET/POST; Âmbar implementa connect/status e erros sanitizados. |
-| T07.c | Pendente | Painel Evolution e QR em memória após rotas/store verificadas. |
-| T13.a1 | Em andamento | Cedro retira apenas os antigos endpoints Meta de ingresso/registro com HTTP 410; novo receptor permanece separado. |
+| T07.a/b | Concluídos | Config `d5911bc` (25 testes), connect/status `ab5bcd8` (31 testes), typecheck; HTTP real e DTOs verificados pelo coordenador. |
+| T07.c | Concluído no milestone | Painel `a00a554`; i18n10/10, lint/typecheck; configuração e QR/descarte local verificados em `evidence/T07.manual.md`. Pareamento ainda pendente. |
+| T13.a1 | Concluído | `9c4fab2`; endpoints Meta antigos410, guard das rotas novas preservado; 28 testes e typecheck, HTTP real verificado. |
+| T13.a2a | Concluído | `f961388`; mutações de templates autenticadas422 sem Graph ou remoção de histórico; 16 testes e typecheck. |
+| T03.c1 | Em fechamento | Callback real de conexão e retry idêntico503→200 observados; cleanup da probe concluído. Conferir peculiaridade de timestamp antes do normalizador. |
+| T05.a2 | Em andamento | Cliente de configuração de webhook, sem ativação da principal antes do receptor durável. |
+| T06.a2 | Em andamento | Migration e teste da caixa de eventos, sem RPCs ou dispatch nesta etapa. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
 
@@ -45,4 +49,4 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 
 O usuário solicitou retomada após os agentes atingirem o limite de uso. Os mesmos três agentes LUNA foram reutilizados no Maestri, preservando as alterações parciais. Verificação fresca: nove containers ativos (oito com healthcheck saudável e REST ativo), CRM HTTP 307 para login, Evolution HTTP 200. Serviços e dados locais foram preservados.
 
-Próxima ação exata: revisar store e rotas do milestone de sessão, implementar o painel e verificar salvamento/QR pela UI. Depois validar pareamento e os contratos restantes de webhook/texto. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
+Próxima ação exata: concluir e revisar contrato do callback, cliente de webhook e caixa de eventos; implementar autenticação/receptor com ACK após persistência. Pareamento e número autorizado de homologação foram solicitados ao usuário; continuar o trabalho independente enquanto aguarda. Integração de mensagens e retirada completa do runtime Meta ainda não foram implementadas; não declarar o objetivo inteiro concluído.
