@@ -64,30 +64,33 @@ export function AiUsageCard() {
   const [data, setData] = useState<UsageResponse | null>(null);
   const loadedRef = useRef<string | null>(null);
 
-  const fetchUsage = useCallback(async (windowDays: number) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
-        days: String(windowDays),
-        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-      const res = await fetch(`/api/ai/usage?${params}`, {
-        cache: 'no-store',
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        toast.error(json?.error ?? t('loadFailed'));
+  const fetchUsage = useCallback(
+    async (windowDays: number) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          days: String(windowDays),
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        });
+        const res = await fetch(`/api/ai/usage?${params}`, {
+          cache: 'no-store',
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok) {
+          toast.error(json?.error ?? t('loadFailed'));
+          setData(null);
+          return;
+        }
+        setData(json as UsageResponse);
+      } catch {
+        toast.error(t('loadFailed'));
         setData(null);
-        return;
+      } finally {
+        setLoading(false);
       }
-      setData(json as UsageResponse);
-    } catch {
-      toast.error(t('loadFailed'));
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
+    },
+    [t]
+  );
 
   useEffect(() => {
     if (!canView || !accountId) return;
@@ -111,16 +114,17 @@ export function AiUsageCard() {
   const hasSpend = (data?.totals.total_tokens ?? 0) > 0;
 
   return (
-    <Card>
+    <Card className="border-border overflow-hidden rounded-2xl shadow-sm">
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-4 w-4 text-primary" /> {t('title')}
+            <CardTitle className="flex items-center gap-3 text-lg">
+              <span className="bg-muted text-foreground grid h-9 w-9 place-items-center rounded-xl">
+                <BarChart3 className="h-4 w-4" />
+              </span>
+              {t('title')}
             </CardTitle>
-            <CardDescription>
-              {t('description')}
-            </CardDescription>
+            <CardDescription>{t('description')}</CardDescription>
           </div>
           <Select
             value={String(days)}
@@ -143,17 +147,22 @@ export function AiUsageCard() {
         {loading || !data ? (
           <Skeleton className="h-[220px] w-full" />
         ) : !hasSpend ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <BarChart3 className="h-8 w-8 opacity-40" />
-            <p>{t('empty', { days: data.window_days })}</p>
-            <p className="text-xs">
-              {t('emptyHint')}
+          <div className="border-border bg-muted/20 text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-12 text-center text-sm">
+            <span className="border-border bg-card mb-1 grid h-12 w-12 place-items-center rounded-xl border">
+              <BarChart3 className="h-5 w-5 opacity-60" />
+            </span>
+            <p className="text-foreground font-medium">
+              {t('empty', { days: data.window_days })}
             </p>
+            <p className="text-xs">{t('emptyHint')}</p>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label={t('totalTokens')} value={formatCompactNumber(data.totals.total_tokens)} />
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Stat
+                label={t('totalTokens')}
+                value={formatCompactNumber(data.totals.total_tokens)}
+              />
               <Stat label={t('llmCalls')} value={String(data.totals.calls)} />
               <Stat
                 label={t('autoReply')}
@@ -168,7 +177,7 @@ export function AiUsageCard() {
             </div>
 
             <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
+              <p className="text-muted-foreground mb-2 text-xs font-medium">
                 {t('tokensPerDay')}
               </p>
               <BarChart
@@ -185,10 +194,10 @@ export function AiUsageCard() {
 
             {data.by_model.length > 0 && (
               <div>
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                <p className="text-muted-foreground mb-2 text-xs font-medium">
                   {t('byModel')}
                 </p>
-                <ul className="divide-y divide-border rounded-md border border-border">
+                <ul className="divide-border border-border divide-y rounded-md border">
                   {data.by_model.map((m) => (
                     <li
                       key={`${m.provider}:${m.model}`}
@@ -196,11 +205,11 @@ export function AiUsageCard() {
                     >
                       <span className="min-w-0 truncate">
                         <span className="text-foreground">{m.model}</span>{' '}
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-muted-foreground text-xs">
                           ({m.provider})
                         </span>
                       </span>
-                      <span className="flex-shrink-0 tabular-nums text-muted-foreground">
+                      <span className="text-muted-foreground flex-shrink-0 tabular-nums">
                         {t('modelCalls', {
                           tokens: formatCompactNumber(m.tokens),
                           count: m.calls,
@@ -213,7 +222,7 @@ export function AiUsageCard() {
             )}
 
             {data.truncated && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 {t('partialWindow')}
               </p>
             )}
@@ -234,12 +243,12 @@ function Stat({
   icon?: typeof Bot;
 }) {
   return (
-    <div className="rounded-md border border-border p-3">
-      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+    <div className="border-border bg-muted/10 min-w-0 rounded-xl border p-3 sm:p-4">
+      <p className="text-muted-foreground flex items-center gap-1 text-xs">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+      <p className="text-foreground mt-1 text-lg font-semibold tabular-nums">
         {value}
       </p>
     </div>

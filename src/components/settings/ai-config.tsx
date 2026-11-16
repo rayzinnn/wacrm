@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff } from 'lucide-react';
+import {
+  Loader2,
+  Sparkles,
+  CheckCircle2,
+  Trash2,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
@@ -39,7 +46,10 @@ const MASKED_KEY = '••••••••••••••••';
 // unassigned" choice gets a sentinel that maps to null in the payload.
 const HANDOFF_QUEUE = '__queue__';
 
-const PROVIDER_LABEL: Record<Exclude<AiProvider, 'openai_compatible'>, string> = {
+const PROVIDER_LABEL: Record<
+  Exclude<AiProvider, 'openai_compatible'>,
+  string
+> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
 };
@@ -50,7 +60,11 @@ const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai_compatible: 'your-api-key',
 };
 
-export function AiConfig() {
+type AiConfigProps = {
+  onStatusChange?: (status: { configured: boolean; isActive: boolean }) => void;
+};
+
+export function AiConfig({ onStatusChange }: AiConfigProps) {
   const { accountId, accountRole, profileLoading } = useAuth();
   const canEdit = accountRole ? canEditSettings(accountRole) : false;
   const t = useTranslations('Settings.aiConfig');
@@ -94,6 +108,9 @@ export function AiConfig() {
         toast.error(data.error ?? t('loadFailed'));
         return;
       }
+      const isConfigured = Boolean(data.configured);
+      const assistantActive = Boolean(isConfigured && data.is_active);
+      onStatusChange?.({ configured: isConfigured, isActive: assistantActive });
       if (data.configured) {
         setConfigured(true);
         setProvider(data.provider);
@@ -116,7 +133,7 @@ export function AiConfig() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onStatusChange, t]);
 
   useEffect(() => {
     if (!accountId || loadedAccountIdRef.current === accountId) return;
@@ -137,7 +154,10 @@ export function AiConfig() {
       model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
       model === AI_PROVIDER_DEFAULT_MODEL.openai_compatible ||
       model.trim() === '';
-    if (isDefaultModel) setModel(next === 'openai_compatible' ? '' : AI_PROVIDER_DEFAULT_MODEL[next]);
+    if (isDefaultModel)
+      setModel(
+        next === 'openai_compatible' ? '' : AI_PROVIDER_DEFAULT_MODEL[next]
+      );
   };
 
   const keyPayload = () => (keyEdited ? apiKey.trim() : undefined);
@@ -205,6 +225,7 @@ export function AiConfig() {
       const data = await res.json();
       if (res.ok) {
         invalidateAiAccountStatus();
+        onStatusChange?.({ configured: true, isActive });
         toast.success(t('saveSuccess'));
         await fetchConfig();
       } else {
@@ -223,6 +244,7 @@ export function AiConfig() {
       const res = await fetch('/api/ai/config', { method: 'DELETE' });
       if (res.ok) {
         invalidateAiAccountStatus();
+        onStatusChange?.({ configured: false, isActive: false });
         toast.success(t('removeSuccess'));
         setConfigured(false);
         setBaseUrl('');
@@ -249,9 +271,8 @@ export function AiConfig() {
 
   if (loading || profileLoading) {
     return (
-      <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loadFailed')} {/* Re-using label or a global one, wait, loading is better. Let's use useTranslations from overview or just hardcode Loading... actually I should add loading to aiConfig */}
-        {/* Wait, I didn't add loading to aiConfig. I'll just use loading. */}
+      <div className="text-muted-foreground flex items-center justify-center py-16">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loading')}
       </div>
     );
   }
@@ -259,29 +280,27 @@ export function AiConfig() {
   const disabled = !canEdit || saving;
 
   return (
-    <div>
-      <SettingsPanelHead
-        title={t('title')}
-        description={t('description')}
-      />
+    <section className="space-y-5">
+      <SettingsPanelHead title={t('title')} description={t('description')} />
 
       {!canEdit && (
-        <p className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+        <p className="border-border bg-muted/40 text-muted-foreground mb-4 rounded-md border px-3 py-2 text-sm">
           {t('adminOnlyConfig')}
         </p>
       )}
 
-      <div className="space-y-6">
-        <Card>
+      <div className="space-y-4">
+        <Card className="border-border overflow-hidden rounded-2xl shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4 text-primary" /> {t('providerAndKey')}
+              <span className="bg-muted text-foreground grid h-8 w-8 place-items-center rounded-lg">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              {t('providerAndKey')}
             </CardTitle>
-            <CardDescription>
-              {t('encryptionNotice')}
-            </CardDescription>
+            <CardDescription>{t('encryptionNotice')}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>{t('provider')}</Label>
@@ -294,7 +313,9 @@ export function AiConfig() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
+                    <SelectItem value="openai">
+                      {PROVIDER_LABEL.openai}
+                    </SelectItem>
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
                     </SelectItem>
@@ -327,7 +348,9 @@ export function AiConfig() {
                     disabled={disabled}
                     autoComplete="off"
                   />
-                  <p className="text-xs text-muted-foreground">{t('baseUrlHint')}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('baseUrlHint')}
+                  </p>
                 </div>
               )}
             </div>
@@ -357,7 +380,7 @@ export function AiConfig() {
                   <button
                     type="button"
                     onClick={() => setShowKey((s) => !s)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
                     tabIndex={-1}
                   >
                     {showKey ? (
@@ -385,7 +408,7 @@ export function AiConfig() {
             <div className="space-y-2">
               <Label htmlFor="ai-embeddings-key">
                 {t('embeddingsKey')}{' '}
-                <span className="font-normal text-muted-foreground">
+                <span className="text-muted-foreground font-normal">
                   {t('optionalSemanticSearch')}
                 </span>
               </Label>
@@ -407,7 +430,7 @@ export function AiConfig() {
                 disabled={disabled}
                 autoComplete="off"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 {t('embeddingsHint', {
                   sameKeyText: provider === 'openai' ? t('sameKeyText') : '',
                 })}
@@ -416,12 +439,10 @@ export function AiConfig() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border overflow-hidden rounded-2xl shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">{t('behaviour')}</CardTitle>
-            <CardDescription>
-              {t('behaviourDesc')}
-            </CardDescription>
+            <CardTitle className="text-lg">{t('behaviour')}</CardTitle>
+            <CardDescription>{t('behaviourDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -436,12 +457,12 @@ export function AiConfig() {
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+            <div className="border-border bg-muted/20 flex items-center justify-between gap-4 rounded-xl border p-4">
               <div>
-                <p className="text-sm font-medium text-foreground">
+                <p className="text-foreground text-sm font-medium">
                   {t('enableAssistant')}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   {t('enableAssistantDesc')}
                 </p>
               </div>
@@ -452,12 +473,12 @@ export function AiConfig() {
               />
             </div>
 
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+            <div className="border-border bg-muted/20 flex items-center justify-between gap-4 rounded-xl border p-4">
               <div>
-                <p className="text-sm font-medium text-foreground">
+                <p className="text-foreground text-sm font-medium">
                   {t('autoReply')}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   {t('autoReplyDesc')}
                 </p>
               </div>
@@ -471,7 +492,7 @@ export function AiConfig() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <Label htmlFor="ai-max">{t('maxAutoReplies')}</Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   {t('maxAutoRepliesDesc')}
                 </p>
               </div>
@@ -483,7 +504,7 @@ export function AiConfig() {
                 value={maxPerConversation}
                 onChange={(e) =>
                   setMaxPerConversation(
-                    Math.min(20, Math.max(1, Number(e.target.value) || 1)),
+                    Math.min(20, Math.max(1, Number(e.target.value) || 1))
                   )
                 }
                 disabled={disabled || !autoReplyEnabled}
@@ -493,7 +514,7 @@ export function AiConfig() {
 
             <div className="space-y-2">
               <Label htmlFor="ai-handoff">{t('handoffTo')}</Label>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 {t('handoffToDesc')}
               </p>
               <Select
@@ -531,7 +552,7 @@ export function AiConfig() {
           }
         />
 
-        <div className="flex items-center justify-between">
+        <div className="border-border flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
           {configured ? (
             <Button
               variant="ghost"
@@ -556,6 +577,6 @@ export function AiConfig() {
           </Button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

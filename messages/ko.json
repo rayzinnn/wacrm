@@ -2200,6 +2200,7 @@
       "description": "OpenAI, Anthropic 또는 OpenAI 호환 API 키를 직접 사용하세요. wacrm은 입력한 키로 제공업체를 직접 호출하므로 좌석당 AI 요금이 없으며 데이터는 그대로 유지됩니다. 받은 키는 받은편지함 AI 초안, 자동 응답 봇, Playground에 사용됩니다.",
       "adminOnlyConfig": "관리자와 소유자만 AI 설정을 변경할 수 있습니다.",
       "loadFailed": "AI 설정을 불러오지 못했습니다",
+      "loading": "AI 설정을 불러오는 중…",
       "providerAndKey": "공급자 & 키",
       "encryptionNotice": "키는 저장 시 암호화되며(AES-256-GCM), 저장 후에는 다시 표시되지 않습니다.",
       "provider": "공급자",
@@ -2397,6 +2398,9 @@
     "tabPlayground": "플레이그라운드",
     "tabSetup": "설정",
     "tabUsage": "사용량",
+    "statusActive": "활성화됨",
+    "statusPaused": "일시 중지됨",
+    "statusNotConfigured": "설정되지 않음",
     "playground": {
       "title": "플레이그라운드",
       "subtitle": "— 고객 입장에서 답변을 테스트하세요",

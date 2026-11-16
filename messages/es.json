@@ -2200,6 +2200,7 @@
       "description": "Usa tu propia clave de OpenAI, Anthropic o de una API compatible con OpenAI. wacrm llama al proveedor directamente con tu clave, sin cargos de IA por puesto, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas por IA, el bot de respuesta automática y el Playground.",
       "adminOnlyConfig": "Solo los administradores y propietarios pueden cambiar la configuración de IA.",
       "loadFailed": "Error al cargar la configuración de IA",
+      "loading": "Cargando la configuración de IA…",
       "providerAndKey": "Proveedor y clave",
       "encryptionNotice": "Tu clave se cifra en reposo (AES-256-GCM) y no se vuelve a mostrar después de guardarla.",
       "provider": "Proveedor",
@@ -2397,6 +2398,9 @@
     "tabPlayground": "Playground",
     "tabSetup": "Configuración",
     "tabUsage": "Uso",
+    "statusActive": "Activo",
+    "statusPaused": "Pausado",
+    "statusNotConfigured": "Sin configurar",
     "playground": {
       "title": "Playground",
       "subtitle": "— prueba respuestas como si fueras un cliente",
