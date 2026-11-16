@@ -26,6 +26,7 @@ import {
   engineSendMedia,
   engineSendText,
 } from './meta-send';
+import * as flowSendModule from './meta-send';
 
 const args = {
   accountId: 'account-fixture',
@@ -79,6 +80,10 @@ afterEach(() => {
 });
 
 describe('flow send capability gate', () => {
+  it('does not export the legacy credential loader', () => {
+    expect(flowSendModule).not.toHaveProperty('loadAccountMetaCredentials');
+  });
+
   it.each(senders)(
     'fails closed for $name before persistence or transport',
     async ({ run }) => {

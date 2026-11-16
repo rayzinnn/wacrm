@@ -1,36 +1,9 @@
-import { decrypt } from '@/lib/whatsapp/encryption';
 import type {
   InteractiveButton,
   InteractiveListSection,
 } from '@/lib/whatsapp/interactive-contract';
-import { getT } from '@/lib/i18n/translate';
-import { supabaseAdmin } from './admin-client';
 
 export const FLOW_SEND_CAPABILITY_ERROR = 'flow_send_capability_unavailable';
-
-const t = getT('LibErrors');
-
-/**
- * Resolve Meta credentials for the AI auto-reply typing indicator.
- * Flow message senders below do not call this helper.
- */
-export async function loadAccountMetaCredentials(
-  db: ReturnType<typeof supabaseAdmin>,
-  accountId: string
-): Promise<{ phoneNumberId: string; accessToken: string }> {
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('phone_number_id, access_token')
-    .eq('account_id', accountId)
-    .single();
-  if (configErr || !config) {
-    throw new Error(t('send.notConfigured'));
-  }
-  return {
-    phoneNumberId: config.phone_number_id,
-    accessToken: decrypt(config.access_token),
-  };
-}
 
 type MediaKind = 'image' | 'video' | 'document' | 'audio';
 
