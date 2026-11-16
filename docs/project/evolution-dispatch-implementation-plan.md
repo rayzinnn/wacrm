@@ -99,6 +99,11 @@ Schema T12 já presente:
   Quando a claim do passo não autoriza execução, não chama o adapter. Ainda
   falta distinguir em SQL uma lease ativa de outro worker de uma lease nova de
   recuperação após queda; o módulo não está ligado ao worker.
+- As migrations `20261116225020`, `20261116225933` e `20261116230135` anexaram
+  checkpoints ao `automation_logs` para steps concluídos via
+  `complete_evolution_dispatch_step` e coordenaram a conclusão da root e do log.
+  Efeitos locais feitos diretamente por `apply_evolution_automation_effect`
+  ainda não passam por esse append; o log completo exige integração adicional.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
