@@ -26,7 +26,7 @@ Os logs temporários sanitizados estão em /tmp/wacrm-t04-direct-search.txt e /t
 | Automations cron/engine → automations/meta-send → meta-api | Adaptar texto/mídia e replay; bloquear ações antigas incompatíveis | T12/T13 |
 | Flows cron/engine → flows/meta-send → meta-api | Adaptar texto/mídia; bloquear template/interativo não verificado | T12/T13 |
 | Auto-reply → typing Meta + send-message | Adaptar texto e remover typing não comprovado; manter handoff | T12/T13 |
-| Webhook Meta/HMAC → evento/status interno | Adaptar ao callback Evolution e autenticação suportada; persistência depende de T04.b | T08/T09 |
+| Webhook Meta/HMAC → evento/status interno | Desativar rota antiga com HTTP 410 em T13; criar callback Evolution separado, com autenticação própria e persistência de T04.b | T08/T09/T13 |
 | media inbound → mirror/download Graph → Storage | Adaptar ao recurso Evolution observado e manter Storage privado | T09/T11 |
 | broadcast/template → API/cron/MCP/core Meta | Bloquear em backend, API pública, cron e MCP | T13 |
 | config/health/register Meta → Supabase/UI | DTO e estado Evolution em T07; rotas exclusivamente Meta bloqueadas | T07/T13 |
@@ -46,8 +46,10 @@ Todos os caminhos do scan de 69 arquivos estão incluídos abaixo; adjacências 
 | src/app/api/whatsapp/config/verify-registration/route.ts | Bloquear Cloud API, sem carregar cliente — T13 |
 | src/app/api/whatsapp/health/route.ts | Adaptar para health de instância Evolution — T07/T13 |
 | src/app/api/whatsapp/health/route.test.ts | Histórico/teste; substituir métricas Meta — T07/T14 |
-| src/app/api/whatsapp/webhook/route.ts | Adaptar callback Evolution e autenticação confirmada — T08/T09 |
-| src/app/api/whatsapp/webhook/route.test.ts | Histórico/teste; envelope/signature não presumidos — T08/T14 |
+| src/app/api/whatsapp/webhook/route.ts | Bloquear rota Meta antiga com HTTP 410 sem carregar HMAC/cliente Meta — T13 |
+| src/app/api/whatsapp/webhook/route.test.ts | Histórico/teste; verificar HTTP 410 sem dependência Meta — T13/T14 |
+| src/app/api/whatsapp/evolution/webhook/route.ts (novo) | Criar receptor Evolution autenticado com caixa durável; não reutilizar HMAC Meta — T08/T09 |
+| src/app/api/whatsapp/evolution/webhook/route.test.ts (novo) | Autenticação, correlação, limite de corpo, ACK após persistência e deduplicação — T08/T14 |
 | src/app/api/whatsapp/send/route.ts, src/app/api/v1/messages/route.ts | Adaptar ao core e tentativa única — T10 |
 | src/app/api/whatsapp/send/route.test.ts, src/app/api/v1/messages/route.test.ts | Histórico/teste; cobrir Core Evolution/sem Meta — T10/T14 |
 | src/app/api/whatsapp/media/[mediaId]/route.ts | Adaptar; remover download Graph e manter objeto privado — T11 |
