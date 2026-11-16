@@ -38,3 +38,18 @@ Nomes de arquivos, rotas e identificadores específicos do novo provedor usarão
 ## Evidências de conclusão
 
 Registrar comandos e resultados em `docs/project/evidence/`, status real em `docs/project/status.md` e instruções em `docs/project/setup.md`. A tela de login isolada não comprova CRM funcional; QR isolado não comprova troca de mensagens. Registrar separadamente o que passou, o que depende do operador e o que está fora desta execução.
+
+## Ruling de execução — 16/11/2026
+
+O bootstrap comprovou criação, autenticação restrita e estado da instância; T03.b2 observa a geração real do QR. O restante de T03 depende de vinculação e de mensagens de homologação. Para permitir que o operador vincule o aparelho pela própria interface, executar primeiro os recortes de sessão abaixo, usando somente seus contratos comprovados. Isso divide dependências por interface; não conclui T03, T05 ou T06 inteiros nem reduz os aceites finais de mensagens.
+
+1. **T05.a1 — cliente de sessão:** tipos C1 com nome Evolution, `getSession(credentials)` e `connectSession(credentials)`, erros sanitizados e allowlist, testes com fixtures observadas de estado/QR/auth. Sem implementação especulativa de envio, normalizador ou mídia.
+2. **T06.a1/b1 — conexão:** após a revisão T04.b2, migration gerada pela CLI apenas para `whatsapp_connections`, isolamento real e store criptografado. Eventos, tentativas e dispatch terão suas migrations aditivas nos recortes seguintes, sem editar a primeira migration depois de aplicada.
+3. **T07.a/b/c — configuração e QR:** implementar DTO seguro, autorização por conta/papel, rotas de sessão e painel com descarte local de QR. Conta deriva da sessão; nenhum token retorna ao navegador em leitura.
+4. Retomar os contratos e recortes de webhook, texto, idempotência, estados, mídia, motores e remoção Meta. T08–T14 continuam obrigatórios antes de declarar a migração concluída.
+
+Durante o marco de sessão, as capacidades de envio permanecem desativadas no DTO e no painel. `text:true` do contrato final C5 só será liberado quando T10 estiver implementado e verificado. Nenhuma configuração Meta fictícia será criada para satisfazer os componentes antigos.
+
+Nomes servidor apenas: `EVOLUTION_ALLOWED_ORIGINS`, com a origem local exata `http://127.0.0.1:8080`, e segredos de worker/webhook apenas quando seus recortes os introduzirem. Timeout de cliente de 15 s; redirect bloqueado; sem retry de mutação. QR é descartado localmente após 20 s, sem alegar validade remota. O runtime do CRM usa token restrito de instância; a chave administrativa continua exclusiva do bootstrap Evolution.
+
+Arquivos previstos para este marco: `src/lib/whatsapp/evolution/{types,client,capabilities,store}.ts` e testes, migration gerada em `supabase/migrations/`, teste SQL de conexão em `supabase/tests/`, configuração existente em `src/app/api/whatsapp/config/`, novas rotas `src/app/api/whatsapp/evolution/{connect,status}/`, painel existente `src/components/settings/whatsapp-config.tsx` e catálogos atuais. O nome de cada migration será o retornado pela CLI instalada.
