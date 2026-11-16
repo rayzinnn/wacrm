@@ -43,9 +43,10 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T09.c1/c2/c3 | Concluídos para conexão | SQL4401eb8, worker e8fb11f +408 d458c79, cron71af28c; evidência T09.manual.md: token velho40001, recuperação na terceira tentativa, fixture removida. Executor local por minuto ativo. |
 | T07.d | Concluído | 6f7f9ef e4d03e40; health/overview/chip usam DTO Evolution, falha de leitura mostra desconhecido. Dashboard verificado no portal. |
 | T13.a2c | Concluído | 75dc961; launch/status broadcast V1 retornam422 após autenticação/scopes, sem I/O de negócio. |
-| T06.a3 | Em andamento | Tabela de tentativas e guarda de convite em migration aditiva; sem RPC/transporte nesta etapa. |
-| T03.d1 | Em andamento documental | Contrato texto/eventos em fonte fixada; não equivale a resposta observada nem habilita envio. |
-| T13.ui1 | Em andamento | Ocultar navegação/ações sem capacidade e bloquear deep links de templates/broadcast no UI. |
+| T06.a3 | Concluído | 2b40adf; tabela de tentativas + guarda de convite, SQL rollback e 6 testes da cobertura de convite. 62 migrations; RPC/transporte ainda pendentes. |
+| T03.d1 | Concluído documental | 9df1cc9; contrato texto/eventos em fonte fixada. Não equivale a resposta observada nem habilita envio. |
+| T13.ui1 | Concluído | e4432c6; navegação e deep links bloqueados, 10 testes i18n/lint/typecheck e portal verificados. |
+| T14 — checks do marco | Concluídos neste recorte | evidence/T14.local-milestone.md: 174 arquivos/1.856 testes, lint 0 com 37 warnings, typecheck 0, build 0. Não conclui T14 da migração inteira. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
 

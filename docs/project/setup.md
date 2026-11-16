@@ -29,7 +29,7 @@ Estado em 2026-11-16: baseline T02 concluído, CRM com Supabase local e Evolutio
 - Colima profile `wacrm`: ARM64, 3 vCPU, 4 GiB RAM e disco de dados de 24 GiB. A rede `wacrm-local` publica bindings somente em `127.0.0.1`.
 - Stack mínima ativa: Postgres, Auth, REST, Storage, Realtime e gateway. Studio, Mailpit, postgres-meta, edge-runtime, Logflare, Vector, imgproxy e Supavisor estão excluídos.
 - Configuração: `project_id = "wacrm-local"`, Auth `site_url = "http://localhost:3000"` e confirmação de e-mail desativada somente para este laboratório local.
-- As 57 migrations de baseline e quatro migrations aditivas Evolution estão aplicadas: 61 neste marco. Nenhuma migration histórica foi alterada. Não use `db reset` para retomar o ambiente.
+- As 57 migrations de baseline e cinco migrations aditivas Evolution estão aplicadas: 62 neste marco. Nenhuma migration histórica foi alterada. Não use `db reset` para retomar o ambiente.
 
 Para iniciar a partir de um terminal novo, mantendo os volumes locais:
 
