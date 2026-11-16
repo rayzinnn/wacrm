@@ -8,6 +8,7 @@ const UNSUPPORTED_TEMPLATES = {
 } as const
 
 export async function POST(_request: Request) {
+  void _request
   try {
     await requireRole('admin')
     return NextResponse.json(UNSUPPORTED_TEMPLATES, { status: 422 })

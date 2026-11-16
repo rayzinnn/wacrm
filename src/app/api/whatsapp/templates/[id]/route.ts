@@ -10,6 +10,8 @@ const UNSUPPORTED_TEMPLATES = {
 type RouteContext = { params: Promise<{ id: string }> }
 
 export async function PATCH(_request: Request, _context: RouteContext) {
+  void _request
+  void _context
   try {
     await requireRole('admin')
     return NextResponse.json(UNSUPPORTED_TEMPLATES, { status: 422 })
@@ -19,6 +21,8 @@ export async function PATCH(_request: Request, _context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, _context: RouteContext) {
+  void _request
+  void _context
   try {
     await requireRole('admin')
     return NextResponse.json(UNSUPPORTED_TEMPLATES, { status: 422 })

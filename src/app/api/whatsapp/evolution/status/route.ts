@@ -7,6 +7,7 @@ import { loadConnection, saveSessionState } from '@/lib/whatsapp/evolution/store
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 export async function GET(_request: Request) {
+  void _request
   try {
     const { accountId } = await requireRole('admin')
     const connection = await loadConnection(accountId)
