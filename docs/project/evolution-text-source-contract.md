@@ -4,7 +4,7 @@
 
 **Fonte:** clone local oficial `evolution-foundation/evolution-api`, commit `cd800f2976e1e5b682fbf86a01ee4d85ae61f370`, `package.json` versão `2.3.7`; worktree da fonte limpa. O `package-lock.json` fixa a dependência `baileys` em `7.0.0-rc.9` sem range. Os links abaixo apontam para esse commit imutável.
 
-**WACRM:** correlaciona o fluxo com C2/C5 do [plano de execução](../superpowers/plans/2026-11-15-wacrm-execucao.md#L91) e com o [adendo Evolution local](../superpowers/plans/2026-11-15-evolution-local.md#L70). O cliente e capacidades existentes continuam com `text: false`; C5 só pode ser liberado após T10 e homologação. Este documento não afirma resposta externa observada, conexão pareada ou troca real de mensagens.
+**WACRM:** correlaciona o fluxo com C2/C5 do [plano de execução](../superpowers/plans/2026-11-15-wacrm-execucao.md#L91) e com o [adendo Evolution local](../superpowers/plans/2026-11-15-evolution-local.md#L70). No momento do levantamento T03.d1, `text` permanecia `false`; após T09/T10 e homologação local, a liberação controlada está registrada em [T10.activation](evidence/T10.activation.md). Este documento preserva a análise da fonte e não afirma delivery/leitura de uma mensagem.
 
 ## Endpoint de envio de texto
 
@@ -83,13 +83,15 @@ No handler `messages.upsert`, `console.log(messageRaw)` é incondicional na linh
 - Status sem timestamp remoto não pode ser ordenado por `date_time` da Evolution. Receiver deve fixar seu próprio `receivedAt` UTC e estado aplicar progressão monotônica; estados anteriores à mensagem continuam pendentes conforme C2/schema.
 - Não persistir envelopes brutos, payloads `extra`, tokens, `apikey`, URLs ou mensagem fora do escopo. `MESSAGE_UPSERT` pode carregar conteúdo de mídia; mídia privada não está homologada.
 
-### C5 — contrato local sem capability habilitada
+### C5 — contrato local e status da capability
+
+Este trecho registra o contrato derivado da fonte no levantamento T03.d1. A decisão atual de ativação e seus checks estão em [T10.activation](evidence/T10.activation.md).
 
 - `sendMessageToConversation(db, accountId, params)` preserva o contrato do CRM; `requestId` é interno e nasce antes do transporte, com reserva C3 (`reserve_evolution_send`). A API Evolution analisada não recebe nem garante idempotência para esse request ID.
 - Enviar no máximo um POST para cada reserva vencedora. Mesma chave/corpo existente não chama transporte novamente; timeout, crash depois de possível aceite ou resposta incompleta persistem `unknown` e não autorizam novo POST.
 - Uma resposta HTTP 201 com `key.id` pode fornecer candidato a `external_message_id`; status `sent` só após política C5 aprovada. `delivered/read/failed` dependem de `messages.update` observado. O HTTP 201, o campo status eventualmente ausente e `send.message` não são prova de delivery.
 - Tipos fora da capacidade ativa devem ser recusados antes da chamada remota: mídia, localização, áudio de WhatsApp, stickers, contatos, templates, reações, polls, list/buttons, status/broadcast e JIDs de grupo. Em inbound, tipos de evento fora da união C2 são ignorados ou falham com código sanitizado explícito, nunca convertidos em texto fictício.
-- Manter `getEvolutionCapabilities().text === false`, mídia vazia e as ações sem suporte bloqueadas. Este levantamento não altera capabilities, cliente, rota, schema, fixture, serviço nem chamada externa.
+- No T03.d1, manter `getEvolutionCapabilities().text === false`, mídia vazia e as ações sem suporte bloqueadas. A ativação posterior mantém mídia vazia e ações sem suporte bloqueadas; este levantamento não alterou cliente, rota, schema, fixture, serviço nem chamada externa.
 
 ## O que observar depois de parear
 

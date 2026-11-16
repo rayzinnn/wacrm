@@ -40,7 +40,11 @@ vi.mock('@/lib/webhooks/deliver', () => ({
 
 import { POST } from './route';
 
-function sendRequest(options: { requestId?: string; type?: string } = {}) {
+function sendRequest(options: {
+  requestId?: string;
+  type?: string;
+  replyToMessageId?: string;
+} = {}) {
   return new Request('https://x.test/api/v1/messages', {
     method: 'POST',
     headers: options.requestId ? { 'Idempotency-Key': options.requestId } : {},
@@ -49,6 +53,9 @@ function sendRequest(options: { requestId?: string; type?: string } = {}) {
       text: 'Hi',
       name: 'Jane',
       ...(options.type ? { type: options.type } : {}),
+      ...(options.replyToMessageId
+        ? { reply_to_message_id: options.replyToMessageId }
+        : {}),
     }),
   });
 }
@@ -126,6 +133,21 @@ describe('POST /api/v1/messages', () => {
 
     expect(res.status).toBe(422);
     expect(body.error.code).toBe('unsupported_capability');
+    expect(mocks.resolveConversationByPhone).not.toHaveBeenCalled();
+    expect(mocks.sendMessageToConversation).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported reply context before resolving or creating a conversation', async () => {
+    const res = await POST(
+      sendRequest({
+        requestId: 'v1-stable-request-4',
+        replyToMessageId: 'parent-message-1',
+      })
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error.code).toBe('reply_not_supported');
     expect(mocks.resolveConversationByPhone).not.toHaveBeenCalled();
     expect(mocks.sendMessageToConversation).not.toHaveBeenCalled();
   });

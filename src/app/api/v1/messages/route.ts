@@ -79,6 +79,16 @@ export async function POST(request: Request) {
         400
       );
     }
+    if (
+      body.reply_to_message_id !== undefined &&
+      body.reply_to_message_id !== null
+    ) {
+      return fail(
+        'reply_not_supported',
+        'Reply-to text sending is not supported by the Evolution adapter yet',
+        400
+      );
+    }
     if (!ctx.createdBy) {
       return fail(
         'sender_unavailable',

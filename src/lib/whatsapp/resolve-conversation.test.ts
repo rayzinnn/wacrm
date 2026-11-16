@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
+
+vi.mock('server-only', () => ({}));
 
 import { resolveConversationByPhone } from './resolve-conversation';
 import { SendMessageError } from './send-message';
@@ -12,7 +14,12 @@ import { SendMessageError } from './send-message';
 type ContactRow = { id: string; phone: string; name?: string | null };
 
 interface Script {
-  config?: { user_id: string } | null; // whatsapp_config.maybeSingle
+  evolutionConnection?: {
+    id: string;
+    account_id: string;
+    created_by: string;
+    provider: 'evolution';
+  } | null; // whatsapp_connections.maybeSingle
   contactCandidates?: ContactRow[];
   /** Per-call results — overrides contactCandidates. Lets a
    *  test simulate "miss, then hit" for the unique-race path. */
@@ -28,6 +35,8 @@ interface Script {
   insertedConversationId?: string; // conversations insert -> single
   insertConversationError?: { code?: string } | null;
   updatedTables?: string[];
+  queryFilters?: Array<[string, string, unknown]>;
+  insertedRows?: Array<{ table: string; values: Record<string, unknown> }>;
 }
 
 function makeDb(script: Script): SupabaseClient {
@@ -35,11 +44,14 @@ function makeDb(script: Script): SupabaseClient {
   let mode: 'select' | 'insert' | 'update' = 'select';
   let contactLookupCalls = 0;
   let convLookupCalls = 0;
+  script.queryFilters ??= [];
+  script.insertedRows ??= [];
 
   const builder: Record<string, unknown> = {
     select: () => builder,
-    insert: () => {
+    insert: (values: Record<string, unknown>) => {
       mode = 'insert';
+      script.insertedRows?.push({ table, values });
       return builder;
     },
     update: () => {
@@ -47,7 +59,10 @@ function makeDb(script: Script): SupabaseClient {
       script.updatedTables?.push(table);
       return builder;
     },
-    eq: () => builder,
+    eq: (column: string, value: unknown) => {
+      script.queryFilters?.push([table, column, value]);
+      return builder;
+    },
     order: () => builder,
     limit: () => {
       // Only the conversation lookup terminates on `.limit(1)`.
@@ -68,8 +83,23 @@ function makeDb(script: Script): SupabaseClient {
       return Promise.resolve({ data, error: null });
     },
     maybeSingle: () => {
-      if (table === 'whatsapp_config')
-        return Promise.resolve({ data: script.config ?? null, error: null });
+      if (table === 'whatsapp_connections')
+        return Promise.resolve({
+          data:
+            script.evolutionConnection?.account_id ===
+              script.queryFilters?.find(
+                ([filterTable, column]) =>
+                  filterTable === 'whatsapp_connections' && column === 'account_id'
+              )?.[2] &&
+            script.evolutionConnection?.provider ===
+              script.queryFilters?.find(
+                ([filterTable, column]) =>
+                  filterTable === 'whatsapp_connections' && column === 'provider'
+              )?.[2]
+              ? script.evolutionConnection
+              : null,
+          error: null,
+        });
       return Promise.resolve({ data: null, error: null });
     },
     single: () => {
@@ -141,8 +171,8 @@ describe('resolveConversationByPhone', () => {
     ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
   });
 
-  it('fails with whatsapp_not_configured when no config owner exists', async () => {
-    const db = makeDb({ config: null });
+  it('fails with whatsapp_not_configured when no Evolution connection exists', async () => {
+    const db = makeDb({ evolutionConnection: null });
     await resolveConversationByPhone(db, 'acct', '+14155550123').catch(
       (e: SendMessageError) => {
         expect(e.code).toBe('whatsapp_not_configured');
@@ -154,9 +184,48 @@ describe('resolveConversationByPhone', () => {
     ).rejects.toBeInstanceOf(SendMessageError);
   });
 
+  it('isolates the Evolution connection by account and provider', async () => {
+    const connection = {
+      id: 'connection-a',
+      account_id: 'account-a',
+      created_by: 'owner-a',
+      provider: 'evolution' as const,
+    };
+    const accountAScript = {
+      evolutionConnection: connection,
+      contactCandidates: [{ id: 'contact-a', phone: '14155550123' }],
+      existingConversation: { id: 'conversation-a' },
+      queryFilters: [] as Array<[string, string, unknown]>,
+    };
+    const accountA = makeDb(accountAScript);
+    await expect(
+      resolveConversationByPhone(accountA, 'account-a', '+14155550123')
+    ).resolves.toMatchObject({ conversationId: 'conversation-a' });
+    expect(accountAScript.queryFilters).toContainEqual([
+      'whatsapp_connections',
+      'account_id',
+      'account-a',
+    ]);
+    expect(accountAScript.queryFilters).toContainEqual([
+      'whatsapp_connections',
+      'provider',
+      'evolution',
+    ]);
+
+    const accountBScript = { evolutionConnection: connection, insertedRows: [] };
+    const accountB = makeDb(accountBScript);
+    await expect(
+      resolveConversationByPhone(accountB, 'account-b', '+14155550123')
+    ).rejects.toMatchObject({
+      code: 'whatsapp_not_configured',
+      status: 400,
+    });
+    expect(accountBScript.insertedRows).toEqual([]);
+  });
+
   it('returns the existing contact + conversation without creating', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      evolutionConnection: { id: 'connection-1', account_id: 'acct', created_by: 'owner-1', provider: 'evolution' },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
       existingConversation: { id: 'cv1' },
     });
@@ -174,13 +243,14 @@ describe('resolveConversationByPhone', () => {
   });
 
   it('creates contact + conversation when none exist', async () => {
-    const db = makeDb({
-      config: { user_id: 'owner-1' },
+    const script = {
+      evolutionConnection: { id: 'connection-1', account_id: 'acct', created_by: 'owner-1', provider: 'evolution' as const },
       contactCandidates: [],
       insertedContactId: 'c2',
       existingConversation: null,
       insertedConversationId: 'cv2',
-    });
+    };
+    const db = makeDb(script);
     const res = await resolveConversationByPhone(
       db,
       'acct',
@@ -193,12 +263,30 @@ describe('resolveConversationByPhone', () => {
       contactCreated: true,
       conversationCreated: true,
     });
+    expect(script.insertedRows).toEqual(
+      expect.arrayContaining([
+        {
+          table: 'contacts',
+          values: expect.objectContaining({
+            account_id: 'acct',
+            user_id: 'owner-1',
+          }),
+        },
+        {
+          table: 'conversations',
+          values: expect.objectContaining({
+            account_id: 'acct',
+            user_id: 'owner-1',
+          }),
+        },
+      ])
+    );
   });
 
   it('never renames an existing contact when a name is passed', async () => {
     const updatedTables: string[] = [];
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      evolutionConnection: { id: 'connection-1', account_id: 'acct', created_by: 'owner-1', provider: 'evolution' },
       contactCandidates: [{ id: 'c1', phone: '14155550123', name: 'Jane Doe' }],
       existingConversation: { id: 'cv1' },
       updatedTables,
@@ -215,7 +303,7 @@ describe('resolveConversationByPhone', () => {
 
   it('reports a newly created conversation for an existing contact', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      evolutionConnection: { id: 'connection-1', account_id: 'acct', created_by: 'owner-1', provider: 'evolution' },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
       existingConversation: null,
       insertedConversationId: 'cv-new',
@@ -234,7 +322,7 @@ describe('resolveConversationByPhone', () => {
     // 23505 unique violation, and the post-race re-lookup now returns
     // the row a concurrent writer created.
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      evolutionConnection: { id: 'connection-1', account_id: 'acct', created_by: 'owner-1', provider: 'evolution' },
       contactCandidatesByCall: [[], [{ id: 'c-raced', phone: '14155550123' }]],
       insertContactError: { code: '23505' },
       existingConversation: { id: 'cv-raced' },
@@ -252,7 +340,7 @@ describe('resolveConversationByPhone', () => {
     // post-race re-lookup returns the winning conversation — no duplicate
     // conversation is created (issue #363).
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      evolutionConnection: { id: 'connection-1', account_id: 'acct', created_by: 'owner-1', provider: 'evolution' },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
       existingConversationByCall: [null, { id: 'cv-raced' }],
       insertConversationError: { code: '23505' },

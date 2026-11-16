@@ -13,9 +13,9 @@
 // account_id-tenancy / user_id-audit split) so a contact created via
 // the API is indistinguishable from one created by an inbound message.
 //
-// Audit user: created rows need a NOT NULL `user_id`. As with the
-// webhook (where there's no logged-in human either), we attribute
-// them to the WhatsApp config owner — a stable account-level default.
+// Audit user: created rows need a NOT NULL `user_id`. The public API
+// has no logged-in human, so use `created_by` from this account's
+// Evolution connection after validating its tenant/provider scope.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -23,7 +23,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
-import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 
 export interface ResolvedConversation {
   conversationId: string;
@@ -37,7 +36,7 @@ export interface ResolvedConversation {
  * Find or create the contact + conversation for `phone` within
  * `accountId`. Throws `SendMessageError` (shared with the send core,
  * so the route maps one error family) on a bad phone, a missing
- * WhatsApp config, or a DB failure.
+ * Evolution connection, or a DB failure.
  */
 export async function resolveConversationByPhone(
   db: SupabaseClient,
@@ -57,36 +56,38 @@ export async function resolveConversationByPhone(
     );
   }
 
-  // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('id')
+  // Fail fast (and create nothing) when the account has no Evolution
+  // connection — the send core uses whatsapp_connections, not legacy
+  // Meta configuration.
+  const { data: connection, error: connectionError } = await db
+    .from('whatsapp_connections')
+    .select('id,created_by')
     .eq('account_id', accountId)
+    .eq('provider', 'evolution')
     .maybeSingle();
-  if (!config) {
+  if (connectionError) {
+    throw new SendMessageError(
+      'db_error',
+      'Failed to resolve Evolution connection',
+      503
+    );
+  }
+  if (!connection) {
     throw new SendMessageError(
       'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
+      'Evolution is not configured for this account.',
       400
     );
   }
 
-  // Audit user for created rows = the single account-wide default used
-  // by every public-API write (see resolveAuditUserId), so a contact
-  // created here is attributed identically to one created via
-  // POST /api/v1/contacts. resolveAuditUserId throws ContactError only
-  // if the owner can't be resolved — remap it to the send error family
-  // the callers already handle.
-  let ownerUserId: string;
-  try {
-    ownerUserId = await resolveAuditUserId(db, accountId);
-  } catch (err) {
-    if (err instanceof ContactError) {
-      throw new SendMessageError('db_error', err.message, err.status);
-    }
-    throw err;
+  if (typeof connection.created_by !== 'string' || !connection.created_by) {
+    throw new SendMessageError(
+      'db_error',
+      'Evolution connection audit user is unavailable',
+      503
+    );
   }
+  const ownerUserId = connection.created_by;
 
   // ---- contact -------------------------------------------------
   let contactId: string;
