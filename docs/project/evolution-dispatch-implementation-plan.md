@@ -69,14 +69,17 @@ Schema T12 já presente:
 - `apply_evolution_automation_effect`, ampliada nas migrations
   `20261116203606_t12_apply_evolution_automation_effect.sql`,
   `20261116210937_t12_apply_evolution_create_deal_effect.sql` e
-  `20261116212357_t12_apply_evolution_assign_conversation_effect.sql`:
-  cobre tag, campo, negócio e atribuição a agente específico com efeito e
-  checkpoint atômicos. Foi aplicada somente no banco local. Waits, cadeia
-  `tag_added` e execução do engine continuam ausentes.
+  `20261116212357_t12_apply_evolution_assign_conversation_effect.sql` e
+  `20261116213942_t12_apply_evolution_wait_effect.sql`:
+  cobre tag, campo, negócio, atribuição a agente específico e espera
+  temporizada com efeito e checkpoint atômicos. Foi aplicada somente no banco
+  local. `wait_for_reply`, cadeia `tag_added`, retomada de esperas e execução do
+  engine continuam ausentes.
 - `automation_pending_executions.evolution_dispatch_step_id`, FK e UNIQUE em
   `supabase/migrations/20261116213140_t12_automation_pending_dispatch_step_link.sql`:
-  schema aplicado no banco local e testado com rollback. Ainda faltam a RPC de
-  wait e a retomada idempotente.
+  schema aplicado no banco local e testado com rollback. O cron legado já
+  ignora linhas vinculadas ao Evolution. Ainda faltam a retomada idempotente e
+  o caminho `wait_for_reply`.
 - `evolution_send_attempts` e RPCs de reserva/conclusão do transporte já
   existem em `supabase/migrations/20261116160955_t06_a3_evolution_send_attempts.sql`
   e `supabase/migrations/20261116170118_evolution_send_text_rpcs.sql` (com
@@ -202,10 +205,10 @@ Meta `wamid` como idempotency key.
 2. **Primitivas locais de automação.** Implementar/usar
    `apply_evolution_automation_effect` para tags, contato, deal, assignment e
    waits; worker avalia `condition` sem I/O e termina step com RPC fenced.
-   **Estado:** RPC de tag/campo/negócio/atribuição específica aplicada e testada
-   no banco local. **Lacunas:** execução do worker, `tag_added`, waits e
-   vínculo/UNIQUE `automation_pending_executions_evolution_dispatch_step_key`
-   já aplicado; falta integrar a RPC de wait. **Teste:** rollback-only de
+   **Estado:** RPC de tag/campo/negócio/atribuição específica e wait temporizado
+   aplicada e testada no banco local; vínculo/UNIQUE da fila também aplicado.
+   **Lacunas:** execução do worker, `tag_added`, `wait_for_reply`, retomada da
+   fila e contexto acumulado dos passos anteriores. **Teste:** rollback-only de
    tenant/FKs/allowed fields, replay da
    mesma wait e corrida de step/efeito. Excluir `close_conversation` até extensão
    aprovada; `send_webhook` permanece bloqueado.
@@ -267,7 +270,7 @@ Meta `wamid` como idempotency key.
 ## Lacunas consolidadas
 
 Ausentes no estado atual das migrations, embora descritos em
-`schema-contract.md`: implementação de `wait`/`wait_for_reply` na
+`schema-contract.md`: implementação de `wait_for_reply` na
 `apply_evolution_automation_effect`, `complete_evolution_flow_transition`,
 `claim_ai_reply_slot_for_dispatch`, `complete_evolution_ai_handoff`;
 colunas/índices Evolution em `flow_run_events`. A coluna/UNIQUE de step em
