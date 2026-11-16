@@ -94,17 +94,29 @@ export default function AgentsPage() {
         >
           <TabsList
             variant="line"
-            className="border-border h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0"
+            className={`border-border grid h-auto w-full ${canViewUsage ? 'grid-cols-3' : 'grid-cols-2'} justify-start gap-1 rounded-none border-b bg-transparent p-0 sm:inline-flex`}
           >
-            <TabsTrigger value="playground">
-              <Sparkles className="mr-1.5 h-4 w-4" /> {t('tabPlayground')}
+            <TabsTrigger
+              value="playground"
+              className="min-w-0 px-1 text-xs whitespace-normal sm:px-1.5 sm:text-sm"
+            >
+              <Sparkles className="mr-1.5 hidden h-4 w-4 sm:block" />
+              {t('tabPlayground')}
             </TabsTrigger>
-            <TabsTrigger value="setup">
-              <Settings2 className="mr-1.5 h-4 w-4" /> {t('tabSetup')}
+            <TabsTrigger
+              value="setup"
+              className="min-w-0 px-1 text-xs whitespace-normal sm:px-1.5 sm:text-sm"
+            >
+              <Settings2 className="mr-1.5 hidden h-4 w-4 sm:block" />
+              {t('tabSetup')}
             </TabsTrigger>
             {canViewUsage && (
-              <TabsTrigger value="usage">
-                <BarChart3 className="mr-1.5 h-4 w-4" /> {t('tabUsage')}
+              <TabsTrigger
+                value="usage"
+                className="min-w-0 px-1 text-xs whitespace-normal sm:px-1.5 sm:text-sm"
+              >
+                <BarChart3 className="mr-1.5 hidden h-4 w-4 sm:block" />
+                {t('tabUsage')}
               </TabsTrigger>
             )}
           </TabsList>
