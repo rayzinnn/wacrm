@@ -138,3 +138,31 @@ describe("middleware — every dashboard route requires a session", () => {
     expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
   });
 });
+
+describe("middleware — retired Meta registration route", () => {
+  it("forwards the exact retired route without a session so its handler can return 410", async () => {
+    mockUser = null;
+
+    const res = await middleware(
+      new NextRequest("https://app.test/api/whatsapp/config/verify-registration"),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it.each([
+    { method: "GET", path: "/api/whatsapp/config" },
+    { method: "GET", path: "/api/whatsapp/evolution/connect" },
+    { method: "GET", path: "/api/whatsapp/evolution/status" },
+    { method: "GET", path: "/api/whatsapp/config/verify-registration/child" },
+    { method: "POST", path: "/api/whatsapp/config/verify-registration" },
+  ])("keeps authentication required for $method $path", async ({ method, path }) => {
+    mockUser = null;
+
+    const res = await middleware(new NextRequest(`https://app.test${path}`, { method }));
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "Unauthorized" });
+  });
+});
