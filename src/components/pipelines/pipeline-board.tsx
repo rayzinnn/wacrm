@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useMemo, useState } from "react";
+import { useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -13,14 +13,14 @@ import {
   closestCorners,
   type DragEndEvent,
   type DragStartEvent,
-} from "@dnd-kit/core";
-import type { Deal, PipelineStage } from "@/types";
-import { DealCard } from "./deal-card";
-import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
-import { formatCurrency } from "@/lib/currency";
-import { useTranslations } from "next-intl";
+} from '@dnd-kit/core';
+import type { Deal, PipelineStage } from '@/types';
+import { DealCard } from './deal-card';
+import { Button } from '@/components/ui/button';
+import { Plus } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
+import { formatCurrency } from '@/lib/currency';
+import { useTranslations } from 'next-intl';
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
@@ -38,11 +38,12 @@ export function PipelineBoard({
   onEditDeal,
 }: PipelineBoardProps) {
   const { defaultCurrency } = useAuth();
+  const tPage = useTranslations('Pipelines.page');
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
 
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
-    [stages],
+    [stages]
   );
 
   const dealsByStage = useMemo(() => {
@@ -60,11 +61,11 @@ export function PipelineBoard({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     // Keyboard drag support: focus a card, Space to pick up, arrows to move,
     // Space to drop, Escape to cancel.
-    useSensor(KeyboardSensor),
+    useSensor(KeyboardSensor)
   );
 
   const activeDeal = activeDealId
-    ? deals.find((d) => d.id === activeDealId) ?? null
+    ? (deals.find((d) => d.id === activeDealId) ?? null)
     : null;
 
   function handleDragStart(event: DragStartEvent) {
@@ -103,12 +104,17 @@ export function PipelineBoard({
           natural layout. The board can still overflow horizontally on
           lg+ once a pipeline has many stages (columns keep a 260px
           min-width), so a thin scrollbar stays visible on desktop. */}
-      <div className="pipeline-scroll flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4 lg:snap-none">
+      <div
+        className="pipeline-scroll flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pt-1 pb-5 lg:snap-none"
+        role="region"
+        aria-label={tPage('managePipelines')}
+        tabIndex={0}
+      >
         {sortedStages.map((stage) => {
           const stageDeals = dealsByStage.get(stage.id) ?? [];
           const totalValue = stageDeals.reduce(
             (s, d) => s + Number(d.value || 0),
-            0,
+            0
           );
           return (
             <StageColumn
@@ -127,7 +133,7 @@ export function PipelineBoard({
       <DragOverlay
         dropAnimation={{
           duration: 200,
-          easing: "cubic-bezier(0.2, 0, 0, 1)",
+          easing: 'cubic-bezier(0.2, 0, 0, 1)',
         }}
       >
         {activeDeal ? (
@@ -201,7 +207,7 @@ function StageColumn({
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
 }) {
-  const t = useTranslations("Pipelines.board");
+  const t = useTranslations('Pipelines.board');
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
 
   return (
@@ -211,35 +217,43 @@ function StageColumn({
     // restore the flex-1 share-the-row behavior. The droppable ref is
     // on the inner messages region below — intentionally NOT here, so
     // a drag over the column header doesn't highlight the whole column.
-    <div className="flex w-[85vw] min-w-[260px] max-w-[320px] shrink-0 snap-start flex-col rounded-xl border border-border bg-card/60 p-4 lg:w-auto lg:max-w-none lg:flex-1 lg:basis-[260px] lg:shrink lg:snap-none">
+    <section
+      className={`pipeline-column border-border bg-card flex w-[85vw] max-w-[340px] min-w-[260px] shrink-0 snap-start flex-col rounded-2xl border p-3.5 sm:p-4 lg:w-auto lg:max-w-none lg:flex-1 lg:shrink lg:basis-[260px] lg:snap-none ${isOver ? 'pipeline-column-over' : ''}`}
+      aria-label={stage.name}
+    >
       {/* 3px colored top border — sits above the column's padding */}
       <div
-        className="-mx-4 -mt-4 h-[3px] rounded-t-xl"
+        className="-mx-3.5 -mt-3.5 h-1 rounded-t-2xl sm:-mx-4 sm:-mt-4"
         style={{ backgroundColor: stage.color }}
       />
-      <div className="flex items-center justify-between pt-3">
-        <h3 className="truncate text-sm font-semibold text-foreground">
+      <span
+        className="pipeline-stage-node"
+        style={{ backgroundColor: stage.color }}
+        aria-hidden="true"
+      />
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <h3 className="text-foreground min-w-0 truncate text-sm font-semibold tracking-[-0.01em]">
           {stage.name}
         </h3>
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <span className="bg-muted text-muted-foreground shrink-0 rounded-md px-2 py-1 text-xs font-semibold tabular-nums">
           {deals.length}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-muted-foreground mt-1 font-mono text-xs font-medium tabular-nums">
         {formatCurrency(totalValue, currency)}
       </p>
 
       <div
         ref={setNodeRef}
-        className={`mt-3 flex flex-1 flex-col gap-2 rounded-lg transition-all ${
+        className={`pipeline-dropzone mt-3 flex min-h-36 flex-1 flex-col gap-2 rounded-xl transition-colors ${
           isOver
-            ? "bg-primary/5 outline outline-2 outline-dashed outline-primary outline-offset-2"
-            : ""
+            ? 'bg-primary/5 outline-primary outline outline-2 outline-offset-2 outline-dashed'
+            : ''
         }`}
       >
         {deals.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-border py-10 text-xs text-muted-foreground">
-            {t("dropDealHere")}
+          <div className="border-border text-muted-foreground flex flex-1 items-center justify-center rounded-xl border border-dashed px-4 py-8 text-center text-xs leading-relaxed">
+            {t('dropDealHere')}
           </div>
         ) : (
           deals.map((deal) => (
@@ -257,12 +271,12 @@ function StageColumn({
         variant="ghost"
         size="sm"
         onClick={() => onAddDeal(stage.id)}
-        className="mt-3 w-full justify-start border border-dashed border-border bg-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
+        className="border-border text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground mt-3 min-h-10 w-full justify-start rounded-xl border border-dashed bg-transparent"
       >
         <Plus className="mr-1 h-3 w-3" />
-        {t("addDeal")}
+        {t('addDeal')}
       </Button>
-    </div>
+    </section>
   );
 }
 
@@ -284,7 +298,7 @@ function DraggableDealCard({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      style={{ opacity: isDragging ? 0.3 : 1, touchAction: "none" }}
+      style={{ opacity: isDragging ? 0.3 : 1, touchAction: 'none' }}
     >
       <DealCard deal={deal} stage={stage} onEdit={onEdit} />
     </div>

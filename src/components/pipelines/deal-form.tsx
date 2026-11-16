@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
-import { CURRENCIES } from "@/lib/currency";
-import { contactSearchFilter } from "@/lib/contacts/search-filter";
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
+import { CURRENCIES } from '@/lib/currency';
+import { contactSearchFilter } from '@/lib/contacts/search-filter';
 import {
   CONTACT_PICKER_LIMIT,
   withSelectedContact,
-} from "@/lib/contacts/contact-picker";
+} from '@/lib/contacts/contact-picker';
 import type {
   Contact,
   Conversation,
@@ -17,17 +17,17 @@ import type {
   DealStatus,
   PipelineStage,
   Profile,
-} from "@/types";
+} from '@/types';
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+} from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Check,
   X,
@@ -35,9 +35,9 @@ import {
   MessageSquare,
   DollarSign,
   Loader2,
-} from "lucide-react";
-import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 
 interface DealFormProps {
   open: boolean;
@@ -58,21 +58,21 @@ export function DealForm({
   defaultStageId,
   onSaved,
 }: DealFormProps) {
-  const t = useTranslations("Pipelines.form");
+  const t = useTranslations('Pipelines.form');
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
-  const [title, setTitle] = useState("");
-  const [value, setValue] = useState("");
+  const [title, setTitle] = useState('');
+  const [value, setValue] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
-  const [contactId, setContactId] = useState("");
-  const [stageId, setStageId] = useState("");
-  const [assignedTo, setAssignedTo] = useState("");
-  const [expectedCloseDate, setExpectedCloseDate] = useState("");
-  const [notes, setNotes] = useState("");
+  const [contactId, setContactId] = useState('');
+  const [stageId, setStageId] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
+  const [expectedCloseDate, setExpectedCloseDate] = useState('');
+  const [notes, setNotes] = useState('');
 
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [contactSearch, setContactSearch] = useState("");
+  const [contactSearch, setContactSearch] = useState('');
   const [pickedContact, setPickedContact] = useState<Contact | null>(null);
   const contactSearchSeq = useRef(0);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -91,28 +91,28 @@ export function DealForm({
   useEffect(() => {
     if (!open) return;
     setConfirmDelete(false);
-    setContactSearch("");
+    setContactSearch('');
     setPickedContact(deal?.contact ?? null);
     if (deal) {
       setTitle(deal.title);
-      setValue(String(deal.value ?? ""));
+      setValue(String(deal.value ?? ''));
       setCurrency(deal.currency || defaultCurrency);
       // contact_id is nullable when the contact has been deleted
       // (migration 004: ON DELETE SET NULL). "" means "no selection".
-      setContactId(deal.contact_id ?? "");
+      setContactId(deal.contact_id ?? '');
       setStageId(deal.stage_id);
-      setAssignedTo(deal.assigned_to ?? "");
-      setExpectedCloseDate(deal.expected_close_date ?? "");
-      setNotes(deal.notes ?? "");
+      setAssignedTo(deal.assigned_to ?? '');
+      setExpectedCloseDate(deal.expected_close_date ?? '');
+      setNotes(deal.notes ?? '');
     } else {
-      setTitle("");
-      setValue("");
+      setTitle('');
+      setValue('');
       setCurrency(defaultCurrency);
-      setContactId("");
-      setStageId(defaultStageId || stages[0]?.id || "");
-      setAssignedTo("");
-      setExpectedCloseDate("");
-      setNotes("");
+      setContactId('');
+      setStageId(defaultStageId || stages[0]?.id || '');
+      setAssignedTo('');
+      setExpectedCloseDate('');
+      setNotes('');
     }
   }, [open, deal, defaultStageId, stages, defaultCurrency]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -122,7 +122,7 @@ export function DealForm({
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const p = await supabase.from("profiles").select("*").order("full_name");
+      const p = await supabase.from('profiles').select('*').order('full_name');
       if (cancelled) return;
       setProfiles((p.data ?? []) as Profile[]);
     })();
@@ -134,26 +134,29 @@ export function DealForm({
   useEffect(() => {
     if (!open || !accountId) return;
     const seq = ++contactSearchSeq.current;
-    const timer = setTimeout(async () => {
-      let query = supabase
-        .from("contacts")
-        .select("*")
-        .eq("account_id", accountId)
-        .order("name")
-        .limit(CONTACT_PICKER_LIMIT);
-      const filter = contactSearchFilter(contactSearch);
-      if (filter) query = query.or(filter);
-      const { data, error } = await query;
-      if (seq !== contactSearchSeq.current || error) return;
-      setContacts((data ?? []) as Contact[]);
-    }, contactSearch ? 250 : 0);
+    const timer = setTimeout(
+      async () => {
+        let query = supabase
+          .from('contacts')
+          .select('*')
+          .eq('account_id', accountId)
+          .order('name')
+          .limit(CONTACT_PICKER_LIMIT);
+        const filter = contactSearchFilter(contactSearch);
+        if (filter) query = query.or(filter);
+        const { data, error } = await query;
+        if (seq !== contactSearchSeq.current || error) return;
+        setContacts((data ?? []) as Contact[]);
+      },
+      contactSearch ? 250 : 0
+    );
     return () => clearTimeout(timer);
   }, [open, accountId, contactSearch, supabase]);
 
   const contactOptions = withSelectedContact(
     contacts,
     contacts.find((c) => c.id === contactId) ??
-      (pickedContact?.id === contactId ? pickedContact : null),
+      (pickedContact?.id === contactId ? pickedContact : null)
   );
 
   // Fetch linked conversation for the selected contact (newest open one).
@@ -168,10 +171,10 @@ export function DealForm({
     let cancelled = false;
     (async () => {
       const { data } = await supabase
-        .from("conversations")
-        .select("*")
-        .eq("contact_id", contactId)
-        .order("last_message_at", { ascending: false })
+        .from('conversations')
+        .select('*')
+        .eq('contact_id', contactId)
+        .order('last_message_at', { ascending: false })
         .limit(1)
         .maybeSingle();
       if (cancelled) return;
@@ -184,7 +187,7 @@ export function DealForm({
 
   async function handleSave() {
     if (!title.trim() || !contactId || !stageId) {
-      toast.error(t("toastRequired"));
+      toast.error(t('toastRequired'));
       return;
     }
     setSaving(true);
@@ -203,11 +206,11 @@ export function DealForm({
 
     if (deal) {
       const { error } = await supabase
-        .from("deals")
+        .from('deals')
         .update(payload)
-        .eq("id", deal.id);
+        .eq('id', deal.id);
       if (error) {
-        toast.error(t("toastFailedSave"));
+        toast.error(t('toastFailedSave'));
         setSaving(false);
         return;
       }
@@ -217,27 +220,30 @@ export function DealForm({
       } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) {
-        toast.error(t("toastNotSignedIn"));
+        toast.error(t('toastNotSignedIn'));
         setSaving(false);
         return;
       }
       if (!accountId) {
-        toast.error(t("toastNotLinked"));
+        toast.error(t('toastNotLinked'));
         setSaving(false);
         return;
       }
-      const { error } = await supabase
-        .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
+      const { error } = await supabase.from('deals').insert({
+        ...payload,
+        user_id: user.id,
+        account_id: accountId,
+        status: 'open',
+      });
       if (error) {
-        toast.error(t("toastFailedCreate"));
+        toast.error(t('toastFailedCreate'));
         setSaving(false);
         return;
       }
     }
 
     setSaving(false);
-    toast.success(deal ? t("toastUpdated") : t("toastCreated"));
+    toast.success(deal ? t('toastUpdated') : t('toastCreated'));
     onOpenChange(false);
     onSaved();
   }
@@ -246,16 +252,20 @@ export function DealForm({
     if (!deal) return;
     setStatusAction(status);
     const { error } = await supabase
-      .from("deals")
+      .from('deals')
       .update({ status })
-      .eq("id", deal.id);
+      .eq('id', deal.id);
     setStatusAction(null);
     if (error) {
-      toast.error(t("toastFailedStatus"));
+      toast.error(t('toastFailedStatus'));
       return;
     }
     toast.success(
-      status === "won" ? t("toastMarkedWon") : status === "lost" ? t("toastMarkedLost") : t("toastReopened"),
+      status === 'won'
+        ? t('toastMarkedWon')
+        : status === 'lost'
+          ? t('toastMarkedLost')
+          : t('toastReopened')
     );
     onOpenChange(false);
     onSaved();
@@ -264,13 +274,13 @@ export function DealForm({
   async function handleDelete() {
     if (!deal) return;
     setDeleting(true);
-    const { error } = await supabase.from("deals").delete().eq("id", deal.id);
+    const { error } = await supabase.from('deals').delete().eq('id', deal.id);
     setDeleting(false);
     if (error) {
-      toast.error(t("toastFailedDelete"));
+      toast.error(t('toastFailedDelete'));
       return;
     }
-    toast.success(t("toastDeleted"));
+    toast.success(t('toastDeleted'));
     setConfirmDelete(false);
     onOpenChange(false);
     onSaved();
@@ -280,45 +290,55 @@ export function DealForm({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
+        className="border-border bg-popover text-popover-foreground w-full p-0 sm:max-w-xl"
       >
         <div className="flex h-full flex-col">
-          <SheetHeader className="border-b border-border/50 p-4">
+          <SheetHeader className="border-border/70 border-b px-5 py-5 sm:px-7">
             <SheetTitle className="text-popover-foreground">
-              {deal ? t("editDeal") : t("newDeal")}
+              {deal ? t('editDeal') : t('newDeal')}
             </SheetTitle>
           </SheetHeader>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7">
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("title")}</Label>
+              <Label htmlFor="deal-title" className="text-muted-foreground">
+                {t('title')}
+              </Label>
               <Input
+                id="deal-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder={t("titlePlaceholder")}
-                className="border-border bg-muted text-foreground"
+                placeholder={t('titlePlaceholder')}
+                className="border-border bg-muted text-foreground min-h-10 text-base sm:text-sm"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("contact")}</Label>
+              <Label
+                htmlFor="deal-contact-search"
+                className="text-muted-foreground"
+              >
+                {t('contact')}
+              </Label>
               <Input
+                id="deal-contact-search"
                 value={contactSearch}
                 onChange={(e) => setContactSearch(e.target.value)}
-                placeholder={t("searchContacts")}
-                className="border-border bg-muted text-foreground"
+                placeholder={t('searchContacts')}
+                className="border-border bg-muted text-foreground min-h-10 text-base sm:text-sm"
               />
               <select
+                aria-label={t('contact')}
                 value={contactId}
                 onChange={(e) => {
                   setContactId(e.target.value);
                   setPickedContact(
-                    contactOptions.find((c) => c.id === e.target.value) ?? null,
+                    contactOptions.find((c) => c.id === e.target.value) ?? null
                   );
                 }}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                className="border-border bg-muted text-foreground focus:border-primary focus:ring-primary h-10 w-full rounded-xl border px-3 text-base outline-none focus:ring-1 sm:text-sm"
               >
-                <option value="">{t("selectContact")}</option>
+                <option value="">{t('selectContact')}</option>
                 {contactOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name || c.phone}
@@ -329,34 +349,43 @@ export function DealForm({
               {linkedConversation && (
                 <Link
                   href="/inbox"
-                  className="mt-1 inline-flex items-center gap-1.5 self-start rounded-md bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/20"
+                  className="bg-primary/10 text-primary hover:bg-primary/20 mt-1 inline-flex min-h-9 items-center gap-1.5 self-start rounded-lg px-3 py-2 text-xs font-medium"
                 >
                   <MessageSquare className="h-3 w-3" />
-                  {t("linkToConversation")}
+                  {t('linkToConversation')}
                 </Link>
               )}
             </div>
 
-            <div className="grid grid-cols-[1fr_110px] gap-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3">
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">{t("value")}</Label>
+                <Label htmlFor="deal-value" className="text-muted-foreground">
+                  {t('value')}
+                </Label>
                 <div className="relative">
-                  <DollarSign className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <DollarSign className="text-muted-foreground absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2" />
                   <Input
+                    id="deal-value"
                     type="number"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     placeholder="0"
-                    className="border-border bg-muted pl-7 text-foreground"
+                    className="border-border bg-muted text-foreground min-h-10 pl-7 text-base sm:text-sm"
                   />
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">{t("currency")}</Label>
+                <Label
+                  htmlFor="deal-currency"
+                  className="text-muted-foreground"
+                >
+                  {t('currency')}
+                </Label>
                 <select
+                  id="deal-currency"
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
+                  className="border-border bg-muted text-foreground focus:border-primary h-10 w-full rounded-xl border px-2.5 text-base outline-none sm:text-sm"
                 >
                   {CURRENCIES.map((c) => (
                     <option key={c.code} value={c.code}>
@@ -368,8 +397,14 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("expectedCloseDate")}</Label>
+              <Label
+                htmlFor="deal-close-date"
+                className="text-muted-foreground"
+              >
+                {t('expectedCloseDate')}
+              </Label>
               <Input
+                id="deal-close-date"
                 type="date"
                 value={expectedCloseDate}
                 onChange={(e) => setExpectedCloseDate(e.target.value)}
@@ -378,11 +413,14 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("stage")}</Label>
+              <Label htmlFor="deal-stage" className="text-muted-foreground">
+                {t('stage')}
+              </Label>
               <select
+                id="deal-stage"
                 value={stageId}
                 onChange={(e) => setStageId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
+                className="border-border bg-muted text-foreground focus:border-primary h-10 w-full rounded-xl border px-3 text-base outline-none sm:text-sm"
               >
                 {stages.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -393,13 +431,16 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("assignedTo")}</Label>
+              <Label htmlFor="deal-assignee" className="text-muted-foreground">
+                {t('assignedTo')}
+              </Label>
               <select
+                id="deal-assignee"
                 value={assignedTo}
                 onChange={(e) => setAssignedTo(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
+                className="border-border bg-muted text-foreground focus:border-primary h-10 w-full rounded-xl border px-3 text-base outline-none sm:text-sm"
               >
-                <option value="">{t("unassigned")}</option>
+                <option value="">{t('unassigned')}</option>
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.full_name || p.email}
@@ -409,97 +450,104 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("notes")}</Label>
+              <Label htmlFor="deal-notes" className="text-muted-foreground">
+                {t('notes')}
+              </Label>
               <Textarea
+                id="deal-notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder={t("notesPlaceholder")}
-                className="min-h-[100px] border-border bg-muted text-foreground"
+                placeholder={t('notesPlaceholder')}
+                className="border-border bg-muted text-foreground min-h-[100px]"
               />
             </div>
 
             {deal && (
-              <div className="space-y-2 rounded-lg border border-border bg-muted/50 p-3">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  {t("status")}
+              <div className="border-border bg-muted/50 space-y-2 rounded-lg border p-3">
+                <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                  {t('status')}
                 </p>
                 <div className="flex gap-2">
                   <Button
                     type="button"
-                    onClick={() => handleStatusChange("won")}
-                    disabled={!!statusAction || deal.status === "won"}
-                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    onClick={() => handleStatusChange('won')}
+                    disabled={!!statusAction || deal.status === 'won'}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1 disabled:opacity-50"
                   >
-                    {statusAction === "won" ? (
+                    {statusAction === 'won' ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
                         <Check className="mr-1 h-4 w-4" />
-                        {t("markAsWon")}
+                        {t('markAsWon')}
                       </>
                     )}
                   </Button>
                   <Button
                     type="button"
-                    onClick={() => handleStatusChange("lost")}
-                    disabled={!!statusAction || deal.status === "lost"}
+                    onClick={() => handleStatusChange('lost')}
+                    disabled={!!statusAction || deal.status === 'lost'}
                     className="flex-1 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
                   >
-                    {statusAction === "lost" ? (
+                    {statusAction === 'lost' ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
                         <X className="mr-1 h-4 w-4" />
-                        {t("markAsLost")}
+                        {t('markAsLost')}
                       </>
                     )}
                   </Button>
                 </div>
-                {deal.status && deal.status !== "open" && (
+                {deal.status && deal.status !== 'open' && (
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => handleStatusChange("open")}
+                    onClick={() => handleStatusChange('open')}
                     disabled={!!statusAction}
-                    className="w-full text-muted-foreground hover:text-foreground"
+                    className="text-muted-foreground hover:text-foreground w-full"
                   >
-                    {t("reopenDeal")}
+                    {t('reopenDeal')}
                   </Button>
                 )}
               </div>
             )}
           </div>
 
-          <div className="border-t border-border/50 bg-popover/80 p-4">
+          <div className="border-border/70 bg-popover/90 border-t px-5 py-4 sm:px-7">
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                className="flex-1 border-border bg-transparent text-muted-foreground hover:bg-muted"
+                className="border-border text-muted-foreground hover:bg-muted flex-1 bg-transparent"
               >
-                {t("cancel")}
+                {t('cancel')}
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={saving || !title.trim() || !contactId || !stageId}
-                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 flex-1"
               >
-                {saving ? t("saving") : deal ? t("saveChanges") : t("createDeal")}
+                {saving
+                  ? t('saving')
+                  : deal
+                    ? t('saveChanges')
+                    : t('createDeal')}
               </Button>
             </div>
 
             {deal &&
               (confirmDelete ? (
                 <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
-                  <span className="text-red-300">{t("deletePrompt")}</span>
+                  <span className="text-red-300">{t('deletePrompt')}</span>
                   <div className="flex gap-1">
                     <button
                       type="button"
                       onClick={() => setConfirmDelete(false)}
                       disabled={deleting}
-                      className="rounded px-2 py-1 text-muted-foreground hover:bg-muted"
+                      className="text-muted-foreground hover:bg-muted rounded px-2 py-1"
                     >
-                      {t("cancel")}
+                      {t('cancel')}
                     </button>
                     <button
                       type="button"
@@ -507,7 +555,7 @@ export function DealForm({
                       disabled={deleting}
                       className="rounded bg-red-600 px-2 py-1 font-medium text-white hover:bg-red-700 disabled:opacity-50"
                     >
-                      {deleting ? t("deleting") : t("confirm")}
+                      {deleting ? t('deleting') : t('confirm')}
                     </button>
                   </div>
                 </div>
@@ -518,7 +566,7 @@ export function DealForm({
                   className="mt-3 flex w-full items-center justify-center gap-1 text-xs text-red-400 hover:text-red-300"
                 >
                   <Trash2 className="h-3 w-3" />
-                  {t("deleteDeal")}
+                  {t('deleteDeal')}
                 </button>
               ))}
           </div>
