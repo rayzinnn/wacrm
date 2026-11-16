@@ -32,6 +32,20 @@ export function canQueueInboxTextSend(
   );
 }
 
+/** Text eligibility is independent of Meta's 24-hour session window. */
+export function canSubmitInboxTextMessage(
+  contentText: string,
+  isSending: boolean,
+  textCapabilityEnabled: boolean,
+  hasUnresolvedOperation: boolean
+): boolean {
+  return (
+    contentText.trim().length > 0 &&
+    !isSending &&
+    canQueueInboxTextSend(textCapabilityEnabled, hasUnresolvedOperation)
+  );
+}
+
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 type FetchLike = typeof fetch;
 

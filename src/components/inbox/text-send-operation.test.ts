@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 import {
   canQueueInboxTextSend,
+  canSubmitInboxTextMessage,
   createInboxTextSendOperation,
   getInboxTextOperationStatus,
   loadInboxTextSendOperations,
@@ -29,6 +30,14 @@ describe('Inbox text send operation', () => {
     expect(canQueueInboxTextSend(true, true)).toBe(false);
     expect(canQueueInboxTextSend(true, false)).toBe(true);
     expect(canQueueInboxTextSend(true, false, true)).toBe(false);
+  });
+
+  it('allows eligible nonempty text independently of the expired Meta window', () => {
+    expect(canSubmitInboxTextMessage(' hello ', false, true, false)).toBe(true);
+    expect(canSubmitInboxTextMessage('   ', false, true, false)).toBe(false);
+    expect(canSubmitInboxTextMessage('hello', true, true, false)).toBe(false);
+    expect(canSubmitInboxTextMessage('hello', false, false, false)).toBe(false);
+    expect(canSubmitInboxTextMessage('hello', false, true, true)).toBe(false);
   });
 
   it('creates one key per action and restores the same pending key after reload', () => {

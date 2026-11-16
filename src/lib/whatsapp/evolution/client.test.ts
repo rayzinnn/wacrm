@@ -675,9 +675,9 @@ describe('configureWebhook', () => {
 })
 
 describe('getEvolutionCapabilities', () => {
-  it('keeps send and Meta-only capabilities disabled in this milestone', () => {
+  it('enables only text after T10 verification', () => {
     expect(getEvolutionCapabilities()).toEqual({
-      text: false,
+      text: true,
       media: [],
       templates: false,
       broadcasts: false,

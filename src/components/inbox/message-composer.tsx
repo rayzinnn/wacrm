@@ -55,7 +55,7 @@ import {
 import { validateInteractivePayload } from "@/lib/whatsapp/interactive";
 import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
-import { canQueueInboxTextSend } from "./text-send-operation";
+import { canSubmitInboxTextMessage } from "./text-send-operation";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -211,7 +211,7 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
-  // Media (like free-form text) is only allowed inside the 24h window.
+  // Keep the existing session guard for non-text actions.
   const inputsDisabled = readOnly || sessionExpired;
 
   const clearTimer = useCallback(() => {
@@ -245,10 +245,12 @@ export function MessageComposer({
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
     if (
-      !trimmed ||
-      sending ||
-      sessionExpired ||
-      !canQueueInboxTextSend(textSendingEnabled, textOperationPending)
+      !canSubmitInboxTextMessage(
+        trimmed,
+        sending,
+        textSendingEnabled,
+        textOperationPending
+      )
     ) return;
 
     setSending(true);
@@ -261,7 +263,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, textSendingEnabled, textOperationPending, onSend, replyTo?.id]);
+  }, [text, sending, textSendingEnabled, textOperationPending, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -575,23 +577,6 @@ export function MessageComposer({
           />
         </div>
       )}
-      {sessionExpired && (
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
-          <p className="text-xs text-amber-400">
-            {t("sessionExpiredHint")}
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-amber-400 hover:text-amber-300"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="mr-1 h-3 w-3" />
-            {t("templates")}
-          </Button>
-        </div>
-      )}
-
       {/* Hidden file inputs driven by the attach menu. */}
       <input
         ref={imageInputRef}
@@ -702,8 +687,8 @@ export function MessageComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* + menu — interactive messages + quick replies. Gated on the
-              24h window like free-form text (interactive requires it). */}
+          {/* + menu — interactive messages + quick replies. Non-text actions
+              keep their existing 24-hour session guard. */}
           <DropdownMenu>
             <DropdownMenuTrigger
               disabled={inputsDisabled}
@@ -768,11 +753,9 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : sessionExpired
-                  ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+                : t("typeMessagePlaceholder")
             }
-            disabled={sessionExpired || readOnly}
+            disabled={readOnly}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
@@ -780,7 +763,7 @@ export function MessageComposer({
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
               "order-1 min-w-0 flex-1 resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 sm:order-2",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              readOnly && "cursor-not-allowed opacity-50"
             )}
           />
 
@@ -788,7 +771,14 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly && textSendingEnabled}
             gateReason={tGate("reasons.sendMessages")}
-            disabled={!text.trim() || sessionExpired || sending || !canQueueInboxTextSend(textSendingEnabled, textOperationPending)}
+            disabled={
+              !canSubmitInboxTextMessage(
+                text,
+                sending,
+                textSendingEnabled,
+                textOperationPending
+              )
+            }
             aria-describedby={textOperationPending ? textOperationStatusId : !textSendingEnabled ? "text-send-capability-status" : undefined}
             onClick={handleSend}
             className="order-1 h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40 sm:order-3"
