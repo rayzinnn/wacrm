@@ -28,7 +28,7 @@ interface OverviewCounts {
 
 interface WhatsAppStatus {
   accountId: string;
-  configured: boolean;
+  configured: boolean | null;
   connected: boolean;
 }
 
@@ -42,6 +42,7 @@ export function SettingsOverview({
   const userId = user?.id;
   const { mode, theme } = useTheme();
   const t = useTranslations('Settings.overview');
+  const tWhatsApp = useTranslations('Settings.whatsapp');
   const tRoles = useTranslations('Settings.roles');
   const tSections = useTranslations('Settings.sections');
 
@@ -130,18 +131,26 @@ export function SettingsOverview({
         const dto: unknown = await response.json();
         if (!dto || typeof dto !== 'object') return null;
         const value = dto as Record<string, unknown>;
-        if (typeof value.configured !== 'boolean' || typeof value.state !== 'string') return null;
+        if (
+          typeof value.configured !== 'boolean'
+          || !['connected', 'connecting', 'disconnected', 'unknown'].includes(String(value.state))
+        ) return null;
         return {
           configured: value.configured,
           connected: value.configured && value.state === 'connected',
         };
       })
       .then((status) => {
-        if (active && status) setWhatsapp({ accountId, ...status });
-        else if (active) setWhatsapp({ accountId, configured: false, connected: false });
+        if (active) {
+          setWhatsapp({
+            accountId,
+            configured: status?.configured ?? null,
+            connected: status?.connected ?? false,
+          });
+        }
       })
       .catch(() => {
-        if (active) setWhatsapp({ accountId, configured: false, connected: false });
+        if (active) setWhatsapp({ accountId, configured: null, connected: false });
       });
 
     return () => {
@@ -171,8 +180,10 @@ export function SettingsOverview({
     {
       section: 'whatsapp',
       loading: Boolean(accountId && !whatsappForAccount),
-      subtitle: !whatsappForAccount?.configured ? (
+      subtitle: !whatsappForAccount || whatsappForAccount.configured === false ? (
         t('notSetup')
+      ) : whatsappForAccount.configured === null ? (
+        tWhatsApp('stateUnknown')
       ) : whatsappForAccount.connected ? (
         <>
           <StatusDot tone="ok" /> {t('connected')}
