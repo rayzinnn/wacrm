@@ -1,0 +1,24 @@
+{
+  "observation": {
+    "observed_at": "2026-11-15T21:42:07-03:00",
+    "api_version": "2.3.7",
+    "source_commit": "cd800f2976e1e5b682fbf86a01ee4d85ae61f370",
+    "integration": "WHATSAPP-BAILEYS",
+    "scope": "local bootstrap only; no QR fetch or message"
+  },
+  "request": {
+    "method": "GET",
+    "path": "/instance/connectionState/wacrm-local",
+    "authentication": "restricted instance token, omitted"
+  },
+  "http_status": 200,
+  "response": {
+    "instance": {
+      "instanceName": "wacrm-local",
+      "state": "close"
+    }
+  },
+  "redactions": [
+    "request authentication"
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "observation": {
+    "observed_at": "2026-11-15T21:42:07-03:00",
+    "api_version": "2.3.7",
+    "source_commit": "cd800f2976e1e5b682fbf86a01ee4d85ae61f370",
+    "integration": "WHATSAPP-BAILEYS",
+    "scope": "local bootstrap only; no QR fetch or message"
+  },
+  "request": {
+    "method": "POST",
+    "path": "/instance/create",
+    "body": {
+      "instanceName": "wacrm-local",
+      "integration": "WHATSAPP-BAILEYS",
+      "qrcode": false,
+      "token": "[REDACTED]"
+    }
+  },
+  "http_status": 201,
+  "response": {
+    "instance": {
+      "instanceName": "wacrm-local",
+      "instanceId": "[REDACTED-ID]",
+      "integration": "WHATSAPP-BAILEYS",
+      "webhookWaBusiness": null,
+      "accessTokenWaBusiness": "",
+      "status": "close"
+    },
+    "hash": "[REDACTED]",
+    "webhook": {},
+    "websocket": {},
+    "rabbitmq": {},
+    "nats": {},
+    "sqs": {},
+    "settings": {
+      "rejectCall": false,
+      "msgCall": "",
+      "groupsIgnore": false,
+      "alwaysOnline": false,
+      "readMessages": false,
+      "readStatus": false,
+      "syncFullHistory": false,
+      "wavoipToken": ""
+    }
+  },
+  "redactions": [
+    "response.hash",
+    "request.body.token",
+    "response.instance.instanceId"
+  ]
+}

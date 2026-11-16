@@ -1,0 +1,138 @@
+name: wacrm-evolution
+
+services:
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7@sha256:0e5d84f45b390e1d659500c9a98bfa2a53be28a341fbc0864966b77485f2a0c5
+    container_name: wacrm-evolution-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      SERVER_URL: http://127.0.0.1:8080
+      AUTHENTICATION_API_KEY: ${AUTHENTICATION_API_KEY:?set in local .env}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: ${DATABASE_CONNECTION_URI:?set in local .env}
+      DATABASE_CONNECTION_CLIENT_NAME: wacrm_evolution_local
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_TTL: "86400"
+      CACHE_REDIS_PREFIX_KEY: wacrm-evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      TELEMETRY_ENABLED: "false"
+      SENTRY_DSN: ""
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      PROMETHEUS_METRICS: "false"
+      RABBITMQ_ENABLED: "false"
+      NATS_ENABLED: "false"
+      SQS_ENABLED: "false"
+      KAFKA_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+      PUSHER_ENABLED: "false"
+      TYPEBOT_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+      N8N_ENABLED: "false"
+      EVOAI_ENABLED: "false"
+      FLOWISE_ENABLED: "false"
+      S3_ENABLED: "false"
+      LOG_LEVEL: WARN,ERROR
+      LOG_BAILEYS: fatal
+      LOG_COLOR: "false"
+      DEL_INSTANCE: "false"
+    mem_limit: 768m
+    cpus: 1.50
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    networks:
+      - evolution
+
+  postgres:
+    image: postgres:15.20-alpine3.23@sha256:fe048400ca7a5d68f1595ce9c3dc8ef879b40b0398ffd117255c3599210d98f7
+    container_name: wacrm-evolution-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in local .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in local .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in local .env}
+    command:
+      - postgres
+      - -c
+      - max_connections=50
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - listen_addresses=*
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    mem_limit: 512m
+    cpus: 1.00
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U '${POSTGRES_USER}' -d '${POSTGRES_DB}'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - evolution
+
+  redis:
+    image: redis:7.4.12-alpine3.22@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
+    container_name: wacrm-evolution-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --port
+      - "6379"
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 96mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis_data:/data
+    mem_limit: 160m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    networks:
+      - evolution
+
+volumes:
+  evolution_instances:
+    name: wacrm-evolution_instances
+  postgres_data:
+    name: wacrm-evolution_postgres
+  redis_data:
+    name: wacrm-evolution_redis
+
+networks:
+  evolution:
+    name: wacrm-evolution
+    driver: bridge
