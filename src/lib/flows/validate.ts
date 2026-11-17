@@ -182,15 +182,7 @@ export function validateFlowForEvolutionActivation(
   }
 
   for (const node of nodes) {
-    if (node.node_type === "send_buttons" || node.node_type === "send_list") {
-      issues.push({
-        severity: "error",
-        scope: "node",
-        node_key: node.node_key,
-        field: "node_type",
-        message: t("evolutionInteractiveNodeUnsupported"),
-      });
-    } else if (
+    if (
       node.node_type === "send_media" ||
       node.node_type === "http_fetch"
     ) {

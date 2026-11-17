@@ -38,10 +38,8 @@ describe("validateFlowForActivation — happy path", () => {
 });
 
 describe("validateFlowForEvolutionActivation — compatibility opt-in", () => {
-  it("flags a manual trigger and every unsupported Evolution node", () => {
+  it("flags a manual trigger and unsupported Evolution nodes", () => {
     const nodes = [
-      { node_key: "buttons", node_type: "send_buttons", config: {} },
-      { node_key: "list", node_type: "send_list", config: {} },
       { node_key: "media", node_type: "send_media", config: {} },
       { node_key: "fetch", node_type: "http_fetch", config: {} },
     ];
@@ -50,7 +48,7 @@ describe("validateFlowForEvolutionActivation — compatibility opt-in", () => {
       nodes,
     );
 
-    expect(issues).toHaveLength(5);
+    expect(issues).toHaveLength(3);
     expect(issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ scope: "trigger", severity: "error" }),
@@ -64,9 +62,6 @@ describe("validateFlowForEvolutionActivation — compatibility opt-in", () => {
         ),
       ]),
     );
-    expect(
-      issues.find((issue) => issue.node_key === "buttons")?.message,
-    ).toBeTruthy();
   });
 
   it("allows supported triggers and node types while preserving legacy validation", () => {
@@ -76,6 +71,8 @@ describe("validateFlowForEvolutionActivation — compatibility opt-in", () => {
       { node_key: "tag", node_type: "set_tag", config: {} },
       { node_key: "message", node_type: "send_message", config: {} },
       { node_key: "input", node_type: "collect_input", config: {} },
+      { node_key: "buttons", node_type: "send_buttons", config: {} },
+      { node_key: "list", node_type: "send_list", config: {} },
       { node_key: "handoff", node_type: "handoff", config: {} },
       { node_key: "end", node_type: "end", config: {} },
     ];
