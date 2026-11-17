@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateFlowForActivation,
+  validateFlowForEvolutionActivation,
   reachableFromEntry,
   findAutoAdvancingCycles,
   longestAutoAdvancingChain,
@@ -32,6 +33,62 @@ const validNodes = [
 
 describe("validateFlowForActivation — happy path", () => {
   it("produces no issues on a well-formed flow", () => {
+    expect(validateFlowForActivation(validFlow, validNodes)).toEqual([]);
+  });
+});
+
+describe("validateFlowForEvolutionActivation — compatibility opt-in", () => {
+  it("flags a manual trigger and every unsupported Evolution node", () => {
+    const nodes = [
+      { node_key: "buttons", node_type: "send_buttons", config: {} },
+      { node_key: "list", node_type: "send_list", config: {} },
+      { node_key: "media", node_type: "send_media", config: {} },
+      { node_key: "handoff", node_type: "handoff", config: {} },
+      { node_key: "fetch", node_type: "http_fetch", config: {} },
+    ];
+    const issues = validateFlowForEvolutionActivation(
+      { trigger_type: "manual" },
+      nodes,
+    );
+
+    expect(issues).toHaveLength(6);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ scope: "trigger", severity: "error" }),
+        ...nodes.map((node) =>
+          expect.objectContaining({
+            scope: "node",
+            node_key: node.node_key,
+            field: "node_type",
+            severity: "error",
+          }),
+        ),
+      ]),
+    );
+    expect(
+      issues.find((issue) => issue.node_key === "buttons")?.message,
+    ).toBeTruthy();
+  });
+
+  it("allows supported triggers and node types while preserving legacy validation", () => {
+    const nodes = [
+      { node_key: "start", node_type: "start", config: {} },
+      { node_key: "condition", node_type: "condition", config: {} },
+      { node_key: "tag", node_type: "set_tag", config: {} },
+      { node_key: "message", node_type: "send_message", config: {} },
+      { node_key: "input", node_type: "collect_input", config: {} },
+      { node_key: "end", node_type: "end", config: {} },
+    ];
+
+    expect(
+      validateFlowForEvolutionActivation({ trigger_type: "keyword" }, nodes),
+    ).toEqual([]);
+    expect(
+      validateFlowForEvolutionActivation(
+        { trigger_type: "first_inbound_message" },
+        nodes,
+      ),
+    ).toEqual([]);
     expect(validateFlowForActivation(validFlow, validNodes)).toEqual([]);
   });
 });

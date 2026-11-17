@@ -46,6 +46,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
+  validateFlowForEvolutionActivation,
   validateFlowForActivation,
   type ValidationIssue,
 } from "@/lib/flows/validate";
@@ -336,16 +337,18 @@ export function FlowEditorProvider({
 
   // ---- Validation ----
   const issues = useMemo<ValidationIssue[]>(
-    () =>
-      validateFlowForActivation(
-        {
-          name: state.name,
-          trigger_type: state.trigger_type,
-          trigger_config: state.trigger_config,
-          entry_node_id: state.entry_node_id,
-        },
-        state.nodes,
-      ),
+    () => {
+      const flow = {
+        name: state.name,
+        trigger_type: state.trigger_type,
+        trigger_config: state.trigger_config,
+        entry_node_id: state.entry_node_id,
+      };
+      return [
+        ...validateFlowForActivation(flow, state.nodes),
+        ...validateFlowForEvolutionActivation(flow, state.nodes),
+      ];
+    },
     [state],
   );
   const canActivate = useMemo(

@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { validateFlowForActivation } from '@/lib/flows/validate'
+import {
+  validateFlowForActivation,
+  validateFlowForEvolutionActivation,
+} from '@/lib/flows/validate'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -84,19 +87,21 @@ export async function POST(
     if (!flow) {
       return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
     }
-    const issues = validateFlowForActivation(
-      flow as {
-        name: string
-        trigger_type: 'keyword' | 'first_inbound_message' | 'manual'
-        trigger_config: Record<string, unknown>
-        entry_node_id: string | null
-      },
-      (nodes ?? []) as Array<{
-        node_key: string
-        node_type: string
-        config: Record<string, unknown>
-      }>,
-    )
+    const flowInput = flow as {
+      name: string
+      trigger_type: 'keyword' | 'first_inbound_message' | 'manual'
+      trigger_config: Record<string, unknown>
+      entry_node_id: string | null
+    }
+    const nodeInputs = (nodes ?? []) as Array<{
+      node_key: string
+      node_type: string
+      config: Record<string, unknown>
+    }>
+    const issues = [
+      ...validateFlowForActivation(flowInput, nodeInputs),
+      ...validateFlowForEvolutionActivation(flowInput, nodeInputs),
+    ]
     const blockers = issues.filter((i) => i.severity === 'error')
     if (blockers.length > 0) {
       return NextResponse.json(

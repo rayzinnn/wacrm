@@ -54,6 +54,60 @@ function runById(id: string) {
 }
 
 describe('POST /api/flows/[id]/activate', () => {
+  it('rejects direct API activation for an Evolution-incompatible trigger', async () => {
+    h.tables.flows[0] = {
+      id: 'flow-1',
+      account_id: 'acct-1',
+      status: 'draft',
+      name: 'Draft flow',
+      trigger_type: 'manual',
+      trigger_config: {},
+      entry_node_id: 'start',
+    }
+    h.tables.flow_nodes = [
+      { flow_id: 'flow-1', node_key: 'start', node_type: 'start', config: { next_node_key: 'end' } },
+      { flow_id: 'flow-1', node_key: 'end', node_type: 'end', config: {} },
+    ]
+
+    const res = await setStatus('active')
+    const body = await res.json()
+
+    expect(res.status).toBe(422)
+    expect(body.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ scope: 'trigger', field: 'trigger_type' }),
+      ]),
+    )
+    expect(h.tables.flows[0].status).toBe('draft')
+  })
+
+  it('rejects direct API activation when a node is unsupported', async () => {
+    h.tables.flows[0] = {
+      id: 'flow-1',
+      account_id: 'acct-1',
+      status: 'draft',
+      name: 'Draft flow',
+      trigger_type: 'keyword',
+      trigger_config: { keywords: ['help'] },
+      entry_node_id: 'start',
+    }
+    h.tables.flow_nodes = [
+      { flow_id: 'flow-1', node_key: 'start', node_type: 'start', config: { next_node_key: 'handoff' } },
+      { flow_id: 'flow-1', node_key: 'handoff', node_type: 'handoff', config: {} },
+    ]
+
+    const res = await setStatus('active')
+    const body = await res.json()
+
+    expect(res.status).toBe(422)
+    expect(body.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ scope: 'node', node_key: 'handoff', field: 'node_type' }),
+      ]),
+    )
+    expect(h.tables.flows[0].status).toBe('draft')
+  })
+
   it.each(['archived', 'draft'])('ends the active runs when the flow is set to %s', async (status) => {
     const res = await setStatus(status)
     expect(res.status).toBe(200)

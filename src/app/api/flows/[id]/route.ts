@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { validateFlowForActivation } from '@/lib/flows/validate'
+import {
+  validateFlowForActivation,
+  validateFlowForEvolutionActivation,
+} from '@/lib/flows/validate'
 import { MAX_FLOW_TIMEOUT_HOURS } from '@/lib/flows/types'
 import { getT } from '@/lib/i18n/translate'
 
@@ -219,18 +222,19 @@ async function validateIfActive(
         .eq('flow_id', flowId)
     ).data ?? [])
 
-  const issues = validateFlowForActivation(
-    {
-      name: body.name !== undefined ? body.name.trim() : current.name,
-      trigger_type: body.trigger_type ?? current.trigger_type,
-      trigger_config: body.trigger_config ?? current.trigger_config ?? {},
-      entry_node_id:
-        body.entry_node_id !== undefined
-          ? body.entry_node_id
-          : current.entry_node_id,
-    },
-    nodes,
-  )
+  const flowInput = {
+    name: body.name !== undefined ? body.name.trim() : current.name,
+    trigger_type: body.trigger_type ?? current.trigger_type,
+    trigger_config: body.trigger_config ?? current.trigger_config ?? {},
+    entry_node_id:
+      body.entry_node_id !== undefined
+        ? body.entry_node_id
+        : current.entry_node_id,
+  }
+  const issues = [
+    ...validateFlowForActivation(flowInput, nodes),
+    ...validateFlowForEvolutionActivation(flowInput, nodes),
+  ]
   return issues.some((i) => i.severity === 'error') ? issues : null
 }
 

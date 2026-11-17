@@ -161,6 +161,53 @@ export function validateFlowForActivation(
   return issues;
 }
 
+/**
+ * Evolution's current Flow executor supports only a subset of the legacy
+ * editor. Keep this compatibility check opt-in so existing validator callers
+ * retain their contract; Evolution activation entry points must include it.
+ */
+export function validateFlowForEvolutionActivation(
+  flow: Pick<FlowInput, "trigger_type">,
+  nodes: NodeInput[],
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  if (flow.trigger_type === "manual") {
+    issues.push({
+      severity: "error",
+      scope: "trigger",
+      field: "trigger_type",
+      message: t("evolutionManualTriggerUnsupported"),
+    });
+  }
+
+  for (const node of nodes) {
+    if (node.node_type === "send_buttons" || node.node_type === "send_list") {
+      issues.push({
+        severity: "error",
+        scope: "node",
+        node_key: node.node_key,
+        field: "node_type",
+        message: t("evolutionInteractiveNodeUnsupported"),
+      });
+    } else if (
+      node.node_type === "send_media" ||
+      node.node_type === "handoff" ||
+      node.node_type === "http_fetch"
+    ) {
+      issues.push({
+        severity: "error",
+        scope: "node",
+        node_key: node.node_key,
+        field: "node_type",
+        message: t("evolutionActionUnsupported"),
+      });
+    }
+  }
+
+  return issues;
+}
+
 export function longestAutoAdvancingChain(
   nodes: NodeInput[],
 ): { start: string; length: number } | null {
