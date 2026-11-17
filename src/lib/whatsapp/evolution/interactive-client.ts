@@ -50,7 +50,8 @@ export function validateProviderInteractive(input: ProviderInteractive): void {
         new Set(input.buttons.map(b => b.id)).size !== input.buttons.length)
       throw new EvolutionError('invalid_credentials', 'Evolution reply buttons are invalid.');
   } else if (input.kind === 'list') {
-    if (!validString(input.description, 4096) || !validString(input.footerText, 1024) ||
+    if (!validString(input.description, 4096) ||
+        (input.footerText !== '' && !validString(input.footerText, 1024)) ||
         !validString(input.buttonText, 20) || !Array.isArray(input.sections) ||
         input.sections.length < 1 || input.sections.length > 10 ||
         input.sections.some(s => !validString(s.title, 100) || !Array.isArray(s.rows) ||
