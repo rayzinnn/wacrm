@@ -13,42 +13,11 @@ function replaceExactly(source, pattern, replacement, label, expected = 1) {
   return source.replace(pattern, replacement);
 }
 
-function unwrapReplyButtons(source) {
-  const marker = /viewOnceMessage:\{message:\{interactiveMessage:\{body:/g;
-  const matches = [...source.matchAll(marker)];
-  if (matches.length !== 1) {
-    throw new Error(`Expected exactly one compiled reply/CTA button viewOnce wrapper; found ${matches.length}`);
-  }
-
-  const markerIndex = matches[0].index;
-  const endPattern = /\}\};return await this\.sendMessageWithTyping\(/g;
-  endPattern.lastIndex = markerIndex;
-  const endMatch = endPattern.exec(source);
-  if (!endMatch) throw new Error('Compiled button message terminator changed');
-
-  const objectEndIndex = endMatch.index + 2;
-  const objectStart = source.lastIndexOf('viewOnceMessage:{message:{interactiveMessage:{body:', markerIndex);
-  if (objectStart !== markerIndex) throw new Error('Compiled button wrapper boundary changed');
-
-  const objectBody = source.slice(markerIndex, objectEndIndex);
-  const trailingBraces = objectBody.match(/\}+$/)?.[0];
-  // NativeFlow, InteractiveMessage, inner message, viewOnceMessage, outer
-  // message are the five expected closes in this fixed compiled shape.
-  if (trailingBraces?.length !== 5) throw new Error('Compiled button object closing shape changed');
-
-  const withoutWrapper = objectBody
-    .replace(/^viewOnceMessage:\{message:\{/, '')
-    .replace(/\}{5}$/, '}}}');
-  return source.slice(0, markerIndex) + withoutWrapper + source.slice(objectEndIndex);
-}
-
 function patchSource(source, path) {
   let patched = source;
 
-  patched = unwrapReplyButtons(patched);
-
-  // Direct interactive/list payloads must use Baileys relayMessage so the
-  // stanza-level biz nodes can accompany the existing message and messageId.
+  // Wrapped interactive/list payloads must use Baileys relayMessage so the
+  // stanza-level biz nodes can accompany the original message and messageId.
   const dispatchPattern = /,(\w+)\.viewOnceMessage\)\{/g;
   patched = replaceExactly(
     patched,
@@ -59,7 +28,7 @@ function patchSource(source, path) {
 
   const relayPattern = /this\.client\.relayMessage\((\w+),(\w+),\{messageId:(\w+)\}\)/g;
   const relayReplacement = (_match, sender, message, messageId) =>
-    `this.client.relayMessage(${sender},${message},{messageId:${messageId},...(${message}.interactiveMessage?{additionalNodes:[{tag:"biz",attrs:{},content:[{tag:"interactive",attrs:{type:"native_flow",v:"1"},content:[{tag:"native_flow",attrs:{v:"9",name:"mixed"}}]}]}]}:${message}.listMessage?{additionalNodes:[{tag:"biz",attrs:{},content:[{tag:"list",attrs:{type:"product_list",v:"2"}}]}]}:{})})`;
+    `this.client.relayMessage(${sender},${message},{messageId:${messageId},...(${message}.viewOnceMessage?.message?.interactiveMessage?{additionalNodes:[{tag:"biz",attrs:{},content:[{tag:"interactive",attrs:{type:"native_flow",v:"1"},content:[{tag:"native_flow",attrs:{v:"9",name:"mixed"}}]}]}]}:${message}.listMessage?{additionalNodes:[{tag:"biz",attrs:{},content:[{tag:"list",attrs:{type:"product_list",v:"2"}}]}]}:{})})`;
   patched = replaceExactly(patched, relayPattern, relayReplacement, 'compiled relay call');
   const relayResultPattern = /(\w+)=await this\.client\.relayMessage\((\w+),(\w+),\{messageId:(\w+),\.\.\.\(/g;
   const relayResults = [...patched.matchAll(relayResultPattern)];
@@ -84,11 +53,11 @@ function patchSource(source, path) {
 
   // Fail closed if the transformations did not leave exactly the intended
   // wire shapes and preserve the event/log patches in this same image layer.
-  if (/viewOnceMessage:\{message:\{interactiveMessage:\{body:/.test(patched)) {
-    throw new Error(`Reply/CTA interactive message still has a viewOnce wrapper in ${path}`);
+  if (!/viewOnceMessage:\{message:\{interactiveMessage:\{body:/.test(patched)) {
+    throw new Error(`Reply/CTA interactive message lost its viewOnce wrapper in ${path}`);
   }
-  if (!/\.interactiveMessage\?\{additionalNodes:\[\{tag:"biz"/.test(patched)) {
-    throw new Error(`Interactive biz/native_flow node is missing in ${path}`);
+  if (!/\.viewOnceMessage\?\.message\?\.interactiveMessage\?\{additionalNodes:\[\{tag:"biz"/.test(patched)) {
+    throw new Error(`Wrapped interactive biz/native_flow node is missing in ${path}`);
   }
   if (!/\.listMessage\?\{additionalNodes:\[\{tag:"biz"/.test(patched)) {
     throw new Error(`List biz/product_list node is missing in ${path}`);
