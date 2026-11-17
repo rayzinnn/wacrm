@@ -47,6 +47,22 @@ export function readEvolutionInteractiveReply(
       ? { kind: 'button', replyId: id, label: label(choice?.selectedDisplayText) }
       : null;
   }
+  if (messageType === 'interactiveResponseMessage') {
+    const choice = record(body.interactiveResponseMessage);
+    const flow = record(choice?.nativeFlowResponseMessage);
+    if (flow?.name !== 'quick_reply' ||
+        typeof flow.paramsJson !== 'string' || flow.paramsJson.length > 2048)
+      return null;
+    let params: unknown;
+    try { params = JSON.parse(flow.paramsJson); }
+    catch { return null; }
+    const parsed = record(params);
+    const id = replyId(parsed?.id);
+    return id
+      ? { kind: 'button', replyId: id,
+          label: label(record(choice?.body)?.text) ?? label(parsed?.display_text) }
+      : null;
+  }
   if (messageType === 'listResponseMessage') {
     const choice = record(body.listResponseMessage);
     const id = replyId(record(choice?.singleSelectReply)?.selectedRowId);

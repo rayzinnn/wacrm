@@ -133,6 +133,7 @@ describe('normalizeWebhook', () => {
     ['buttonsResponseMessage', { buttonsResponseMessage: { selectedButtonId: 'OPTION_YES', selectedDisplayText: 'Yes, continue' } }, 'button', 'OPTION_YES', 'Yes, continue'],
     ['templateButtonReplyMessage', { templateButtonReplyMessage: { selectedId: 'OPTION_NO', selectedDisplayText: 'No thanks' } }, 'button', 'OPTION_NO', 'No thanks'],
     ['listResponseMessage', { listResponseMessage: { singleSelectReply: { selectedRowId: 'ROW_HOURS' }, title: 'Opening hours' } }, 'list', 'ROW_HOURS', 'Opening hours'],
+    ['interactiveResponseMessage', { interactiveResponseMessage: { body: { text: 'Yes, continue' }, nativeFlowResponseMessage: { name: 'quick_reply', paramsJson: '{"id":"OPTION_YES","display_text":"Yes, continue"}' } } }, 'button', 'OPTION_YES', 'Yes, continue'],
   ] as const)('normalizes explicit Baileys selection from %s', (messageType, message, replyKind, replyId, label) => {
     const payload = cloneMessagePayload()
     payloadKey(payload).id = 'SYNTHETIC_INTERACTIVE_MESSAGE_ID'
