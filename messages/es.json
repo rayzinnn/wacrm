@@ -401,7 +401,8 @@
       "assigneeNoLongerMember": "Ese compañero ya no es miembro de esta cuenta",
       "networkError": "error de red",
       "documentFallback": "Documento",
-      "you": "Tú"
+      "you": "Tú",
+      "mediaDeliveryUnknown": "Estado del envío desconocido. No vuelvas a enviarlo automáticamente."
     },
     "sessionTimer": {
       "expired": "Expirada",
@@ -454,7 +455,8 @@
         "document": "documento",
         "audio": "audio"
       },
-      "uploadFailed": "Falló la carga."
+      "uploadFailed": "Falló la carga.",
+      "unsupportedMediaFile": "Archivo no compatible. Elige PNG, JPEG o PDF con una extensión coincidente."
     },
     "bubble": {
       "photo": "Foto",

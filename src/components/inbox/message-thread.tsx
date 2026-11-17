@@ -42,10 +42,8 @@ import { MediaLightbox } from "./media-lightbox";
 import { collectMediaGallery } from "@/lib/media/gallery";
 import {
   MessageComposer,
-  CHAT_MEDIA_BUCKET,
   type SendMediaPayload,
 } from "./message-composer";
-import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
@@ -59,6 +57,7 @@ import {
 } from "@/lib/whatsapp/template-message-view";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
 import { getEvolutionCapabilities } from "@/lib/whatsapp/evolution/capabilities";
+import { sendStagedEvolutionMedia } from "./evolution-media-composer";
 import { resolveAssignmentResult } from "@/lib/inbox/assignment";
 import {
   businessReactionOn,
@@ -701,10 +700,13 @@ export function MessageThread({
   const handleSendMedia = useCallback(
     async (payload: SendMediaPayload) => {
       if (!conversation) return;
+      if (!payload.stageId || !payload.idempotencyKey) {
+        toast.error(t("sendFailed", { reason: "unsupported_capability" }));
+        return;
+      }
 
-      // Documents show their filename in our own bubble (and to the
-      // recipient as the Meta caption when no caption was typed); other
-      // kinds use the caption as-is. Audio carries no caption.
+      // Documents use their filename as the bubble fallback; images use
+      // the optional caption.
       const contentText =
         payload.kind === "document"
           ? payload.caption || payload.filename || t("documentFallback")
@@ -725,40 +727,22 @@ export function MessageThread({
       onNewMessage(optimisticMsg);
       setReplyTo(null);
 
-      try {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: payload.kind,
-            media_url: payload.mediaUrl,
-            content_text: contentText,
-            filename: payload.filename,
-            reply_to_message_id: payload.replyToId,
-          }),
-        });
-
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok) {
-          const reason = data?.error || `HTTP ${res.status}`;
-          console.error("Failed to send media:", reason);
-          toast.error(t("sendFailed", { reason }));
-          onUpdateMessage(tempId, { status: "failed" });
-          // The upload never reached the recipient — GC the orphaned
-          // object rather than leaving it in the public bucket forever.
-          void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
-          return;
-        }
-
-        onUpdateMessage(tempId, confirmedSendUpdate(data));
-      } catch (err) {
-        console.error("Failed to send media:", err);
-        const reason = err instanceof Error ? err.message : t("networkError");
-        toast.error(t("sendFailed", { reason }));
+      const result = await sendStagedEvolutionMedia({
+        conversationId: conversation.id,
+        stageId: payload.stageId,
+        idempotencyKey: payload.idempotencyKey,
+        caption: payload.caption,
+      });
+      if (result.outcome === "accepted") {
+        onUpdateMessage(tempId, { ...(result.messageId ? { id: result.messageId } : {}), status: "sent", error_title: null });
+      } else if (result.outcome === "pending" || result.outcome === "unknown") {
+        // UI-only uncertainty on this optimistic item; the persisted status
+        // vocabulary remains sending/sent/delivered/read/failed.
+        onUpdateMessage(tempId, { ...(result.messageId ? { id: result.messageId } : {}), status: "sending", error_title: t("mediaDeliveryUnknown") });
+        toast.error(t("mediaDeliveryUnknown"));
+      } else {
         onUpdateMessage(tempId, { status: "failed" });
-        void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
+        toast.error(t("sendFailed", { reason: "evolution_rejected" }));
       }
     },
     [conversation, onNewMessage, onUpdateMessage, t],

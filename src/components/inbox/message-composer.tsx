@@ -12,7 +12,6 @@ import {
   LayoutTemplate,
   Paperclip,
   Image as ImageIcon,
-  Video,
   FileText,
   Mic,
   Square,
@@ -57,6 +56,11 @@ import type { InteractiveMessagePayload, QuickReply } from "@/types";
 import { QuickReplyPicker } from "./quick-reply-picker";
 import { canSubmitInboxTextMessage } from "./text-send-operation";
 import { getEvolutionCapabilities } from "@/lib/whatsapp/evolution/capabilities";
+import {
+  stageEvolutionMedia,
+  validateEvolutionMediaFile,
+  canStageEvolutionKind,
+} from "./evolution-media-composer";
 
 /** Media content types an agent can send from the composer. */
 export type ComposerMediaKind = "image" | "video" | "document" | "audio";
@@ -67,21 +71,21 @@ export const CHAT_MEDIA_BUCKET = "chat-media";
 /** Meta caps media captions at 1024 chars. Enforced here and in the send route. */
 export const MEDIA_CAPTION_MAX = 1024;
 
-/** Hard cap on a single voice recording so it can't blow the upload/
- *  transcode limits — auto-stops the recorder when reached. */
+/** Hard cap on a single voice recording so it cannot exceed upload limits. */
 const MAX_RECORDING_SECONDS = 5 * 60;
 
 export interface SendMediaPayload {
   kind: ComposerMediaKind;
-  /** Public chat-media URL Meta fetches at send time. */
+  /** Same-origin private preview path for staged Evolution media. */
   mediaUrl: string;
-  /** Storage object path — lets the caller GC the object if the send fails. */
-  path: string;
   /** Optional caption (image/video/document only). */
   caption?: string;
   /** Original file name — surfaced to the recipient for documents. */
   filename?: string;
   replyToId?: string;
+  /** Private Evolution stage reference; legacy public media fields stay optional for compatibility. */
+  stageId?: string;
+  idempotencyKey?: string;
 }
 
 interface ReplyDraft {
@@ -91,13 +95,8 @@ interface ReplyDraft {
   preview: string;
 }
 
-// Mirrors the chat-media bucket's allowed_mime_types (migration 023) for
-// the file picker so unsupported files are rejected before upload rather
-// than failing with a confusing Storage error. Audio has no picker — it's
-// captured via the recorder.
-const PICKER_ACCEPT: Record<"image" | "video" | "document", string> = {
+const PICKER_ACCEPT: Record<"image" | "document", string> = {
   image: "image/png,image/jpeg,image/webp",
-  video: "video/mp4,video/3gpp",
   document:
     "application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain",
 };
@@ -109,6 +108,8 @@ interface MediaDraft {
   path: string;
   filename: string;
   caption: string;
+  stageId?: string;
+  idempotencyKey?: string;
 }
 
 interface MessageComposerProps {
@@ -183,7 +184,6 @@ export function MessageComposer({
   const [draft, setDraft] = useState<MediaDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   // Mirror of `draft` for the unmount cleanup, which can't read render
   // state. Kept in sync below so navigating away with a staged-but-unsent
@@ -412,36 +412,32 @@ export function MessageComposer({
     [openInteractiveBuilder, adjustHeight],
   );
 
-  // Upload a captured file to chat-media and stage it as a draft.
+  // Validate and stage only Evolution media kinds with an active capability.
   const stageUpload = useCallback(
     async (kind: ComposerMediaKind, file: File) => {
-      // Per-kind ceiling mirrors Meta's caps (image 5 MB, etc.) so we
-      // reject before upload rather than orphaning an object that Meta
-      // would then refuse at send.
-      const max = MEDIA_MAX_BYTES_BY_KIND[kind];
-      if (file.size > max) {
-        toast.error(
-          t("fileTooLarge", {
-            size: (file.size / 1024 / 1024).toFixed(1),
-            kind: t(`mediaKind.${kind}`),
-            max: Math.round(max / 1024 / 1024),
-          }),
-        );
+      if (!canStageEvolutionKind(kind, evolutionCapabilities.media)) {
+        toast.error(t("unsupportedMediaFile"));
+        return;
+      }
+      const validationError = validateEvolutionMediaFile(file);
+      if (validationError) {
+        toast.error(validationError === "file_too_large"
+          ? t("fileTooLarge", { size: (file.size / 1024 / 1024).toFixed(1), kind: t(`mediaKind.${kind}`), max: 16 })
+          : t("unsupportedMediaFile"));
         return;
       }
       setBusy(true);
       try {
-        const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
-        // Replacing an existing draft? GC the previous object first.
+        const staged = await stageEvolutionMedia(file, conversationId);
         removeStaged(draftRef.current?.path);
-        setDraft({ kind, mediaUrl: publicUrl, path, filename: file.name, caption: "" });
+        setDraft({ kind: staged.kind, mediaUrl: staged.previewUrl, path: "", filename: staged.filename, caption: "", stageId: staged.stageId, idempotencyKey: staged.idempotencyKey });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : t("uploadFailed"));
       } finally {
         setBusy(false);
       }
     },
-    [removeStaged, t],
+    [conversationId, evolutionCapabilities.media, removeStaged, t],
   );
 
   const handlePicked = useCallback(
@@ -543,13 +539,14 @@ export function MessageComposer({
     onSendMedia({
       kind: draft.kind,
       mediaUrl: draft.mediaUrl,
-      path: draft.path,
       // Audio takes no caption (Meta rejects it). Everything else: the
       // trimmed caption, or undefined when blank.
       caption:
         draft.kind === "audio" ? undefined : draft.caption.trim() || undefined,
       filename: draft.kind === "document" ? draft.filename : undefined,
       replyToId: replyTo?.id,
+      stageId: draft.stageId,
+      idempotencyKey: draft.idempotencyKey,
     });
     // The object is now owned by the sent message — clear without GC.
     setDraft(null);
@@ -583,7 +580,7 @@ export function MessageComposer({
       <input
         ref={imageInputRef}
         type="file"
-        accept={PICKER_ACCEPT.image}
+        accept={evolutionCapabilities.media.includes("image") ? "image/png,image/jpeg" : PICKER_ACCEPT.image}
         className="hidden"
         onChange={(e) => {
           handlePicked("image", e.target.files?.[0]);
@@ -591,19 +588,9 @@ export function MessageComposer({
         }}
       />
       <input
-        ref={videoInputRef}
-        type="file"
-        accept={PICKER_ACCEPT.video}
-        className="hidden"
-        onChange={(e) => {
-          handlePicked("video", e.target.files?.[0]);
-          e.target.value = "";
-        }}
-      />
-      <input
         ref={documentInputRef}
         type="file"
-        accept={PICKER_ACCEPT.document}
+        accept={evolutionCapabilities.media.includes("document") ? "application/pdf" : PICKER_ACCEPT.document}
         className="hidden"
         onChange={(e) => {
           handlePicked("document", e.target.files?.[0]);
@@ -651,7 +638,7 @@ export function MessageComposer({
               the full width; on sm+ it sits inline before the textarea. */}
           <div className="order-2 flex basis-full items-end gap-2 sm:order-1 sm:basis-auto">
           {/* Attach menu — photo / video / document / voice. */}
-          {evolutionCapabilities.media.length > 0 && <DropdownMenu>
+          {evolutionCapabilities.media.some((kind) => kind === "image" || kind === "document") && <DropdownMenu>
             <DropdownMenuTrigger
               disabled={inputsDisabled || busy}
               title={
@@ -670,22 +657,18 @@ export function MessageComposer({
               )}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="border-border bg-popover">
-              <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
+              {evolutionCapabilities.media.includes("image") && <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
                 <ImageIcon className="mr-2 h-4 w-4" />
                 {t("photo")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => videoInputRef.current?.click()}>
-                <Video className="mr-2 h-4 w-4" />
-                {t("video")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => documentInputRef.current?.click()}>
+              </DropdownMenuItem>}
+              {evolutionCapabilities.media.includes("document") && <DropdownMenuItem onClick={() => documentInputRef.current?.click()}>
                 <FileText className="mr-2 h-4 w-4" />
                 {t("document")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => void startRecording()}>
+              </DropdownMenuItem>}
+              {canStageEvolutionKind("audio", evolutionCapabilities.media) && <DropdownMenuItem onClick={() => void startRecording()}>
                 <Mic className="mr-2 h-4 w-4" />
                 {t("voiceNote")}
-              </DropdownMenuItem>
+              </DropdownMenuItem>}
             </DropdownMenuContent>
           </DropdownMenu>}
 
@@ -792,12 +775,12 @@ export function MessageComposer({
       {/* Hint sits outside the flex row so its height doesn't push
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
-      {!draft && !recording && (
+      {!draft && (
         <p className="mt-1 pl-1 text-[10px] text-muted-foreground sm:pl-[5.5rem]">
           {t("draftHint")}
         </p>
       )}
-      {!textSendingEnabled && !draft && !recording && (
+      {!textSendingEnabled && !draft && (
         <p
           id="text-send-capability-status"
           role="status"
@@ -895,7 +878,11 @@ function MediaDraftPreview({
           {draft.kind === "document" && (
             <div className="flex items-center gap-2 text-sm text-foreground">
               <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{draft.filename}</span>
+              {draft.stageId ? (
+                <a href={draft.mediaUrl} target="_blank" rel="noreferrer" className="truncate text-primary underline-offset-4 hover:underline">
+                  {draft.filename}
+                </a>
+              ) : <span className="truncate">{draft.filename}</span>}
             </div>
           )}
         </div>

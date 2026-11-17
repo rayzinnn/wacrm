@@ -144,7 +144,11 @@ function StatusIcon({
 }) {
   switch (status) {
     case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
+      return title ? (
+        <span className="inline-flex" title={title} role="img" aria-label={title}>
+          <Clock className="h-3 w-3 text-status-warning" />
+        </span>
+      ) : <Clock className="h-3 w-3 text-muted-foreground" />;
     case "sent":
       return <Check className="h-3 w-3 text-muted-foreground" />;
     case "delivered":
@@ -448,7 +452,7 @@ export function MessageBubble({
           >
             {time}
           </span>
-          {isAgent && <StatusIcon status={message.status} title={failure} />}
+          {isAgent && <StatusIcon status={message.status} title={failure ?? (message.status === "sending" ? message.error_title : null)} />}
         </div>
       </div>
       {failure && (

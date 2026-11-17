@@ -401,7 +401,8 @@
       "assigneeNoLongerMember": "That teammate is no longer a member of this account",
       "networkError": "network error",
       "documentFallback": "Document",
-      "you": "You"
+      "you": "You",
+      "mediaDeliveryUnknown": "Delivery status is unknown. Do not resend automatically."
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -454,7 +455,8 @@
         "document": "document",
         "audio": "audio"
       },
-      "uploadFailed": "Upload failed."
+      "uploadFailed": "Upload failed.",
+      "unsupportedMediaFile": "Unsupported file. Choose a PNG, JPEG, or PDF whose extension matches its type."
     },
     "bubble": {
       "photo": "Photo",

@@ -33,7 +33,16 @@ function sameOutgoingContent(temp: Message, row: Message): boolean {
 }
 
 export function applyRealtimeInsert(prev: Message[], row: Message): Message[] {
-  if (prev.some((m) => m.id === row.id)) return prev;
+  const sameIdIndex = prev.findIndex((message) => message.id === row.id);
+  if (sameIdIndex >= 0) {
+    // An ambiguous media send can adopt its persisted row ID before the
+    // realtime INSERT arrives. Merge that server row so transient UI-only
+    // uncertainty is cleared and the persisted status wins.
+    if (prev[sameIdIndex].error_title && row.error_title !== prev[sameIdIndex].error_title) {
+      return prev.map((message, index) => index === sameIdIndex ? { ...message, ...row } : message);
+    }
+    return prev;
+  }
   const tempIndex = prev.findIndex(
     (m) => isPendingTemp(m) && sameOutgoingContent(m, row),
   );

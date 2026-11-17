@@ -70,6 +70,19 @@ describe("applyRealtimeInsert", () => {
     const prev = [msg("real-1")];
     expect(applyRealtimeInsert(prev, msg("real-1"))).toBe(prev);
   });
+
+  it("reconciles the persisted row over an uncertain media bubble with the same ID", () => {
+    const prev = [msg("real-1", {
+      content_type: "image",
+      status: "sending",
+      error_title: "Delivery status is unknown. Do not resend automatically.",
+    })];
+    const serverRow = msg("real-1", { content_type: "image", status: "sent", error_title: null });
+    const next = applyRealtimeInsert(prev, serverRow);
+    expect(next).toEqual([serverRow]);
+    expect(next[0].status).toBe("sent");
+    expect(next[0].error_title).toBeNull();
+  });
 });
 
 describe("confirmedSendUpdate", () => {
