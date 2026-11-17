@@ -84,11 +84,11 @@ interface TransitionInput {
   flowRunId: string;
   eventId: string;
   expectedTransitionSeq: number;
-  eventType: 'started' | 'node_entered' | 'message_sent' | 'completed';
+  eventType: 'started' | 'node_entered' | 'message_sent' | 'handoff' | 'completed';
   nodeKey: string;
   payload: JsonObject;
   nextNodeKey: string | null;
-  nextStatus: 'active' | 'completed';
+  nextStatus: 'active' | 'completed' | 'handed_off';
   endReason: string | null;
 }
 
@@ -157,6 +157,11 @@ export interface EvolutionFlowStore {
     status: string;
   }>;
   completeCollectInputReply(input: Omit<TransitionInput, 'eventType' | 'payload' | 'nextNodeKey' | 'nextStatus' | 'endReason'>): Promise<{
+    applied: boolean;
+    transition_seq: number;
+    status: string;
+  }>;
+  completeHandoff(input: Omit<TransitionInput, 'eventType' | 'payload' | 'nextNodeKey' | 'nextStatus' | 'endReason'>): Promise<{
     applied: boolean;
     transition_seq: number;
     status: string;
@@ -328,7 +333,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         throw new EvolutionFlowExecutionError('root_terminal_mismatch');
       if (completedRun.status === 'active' && completedRun.current_node_key)
         return { status: 'waiting', flowRunId: root.flow_run_id, nodeKey: completedRun.current_node_key };
-      if (completedRun.status !== 'completed')
+      if (completedRun.status !== 'completed' && completedRun.status !== 'handed_off')
         throw new EvolutionFlowExecutionError('root_terminal_mismatch');
       return { status: 'done', flowRunId: root.flow_run_id, transitions: 0 };
     }
@@ -356,7 +361,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       )
         throw new EvolutionFlowExecutionError('run_lineage_invalid');
       if (TERMINAL_STATUSES.has(run.status)) {
-        if (run.status === 'completed') {
+        if (run.status === 'completed' || run.status === 'handed_off') {
           await store.completeRoot(root.id, input.leaseToken, 'done', null);
           return { status: 'done', flowRunId, transitions };
         }
@@ -395,6 +400,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         node.node_type !== 'set_tag' &&
         node.node_type !== 'send_message' &&
         node.node_type !== 'collect_input' &&
+        node.node_type !== 'handoff' &&
         node.node_type !== 'end'
       ) {
         return {
@@ -507,6 +513,11 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         eventType = 'message_sent';
         payload = { outcome: 'accepted' };
         nextNodeKey = node.node_key;
+      } else if (node.node_type === 'handoff') {
+        eventType = 'handoff';
+        nextNodeKey = node.node_key;
+        nextStatus = 'handed_off';
+        endReason = 'handoff_node';
       } else {
         eventType = 'completed';
         nextNodeKey = null;
@@ -663,6 +674,17 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
                 'set_tag_target_invalid'
               ),
             })
+          : node.node_type === 'handoff'
+            ? await store.completeHandoff({
+                dispatchId: root.id,
+                dispatchLeaseToken: input.leaseToken,
+                stepId: claim.step_id,
+                stepLeaseToken: claim.lease_token,
+                flowRunId,
+                eventId: root.event_id,
+                expectedTransitionSeq: run.transition_seq,
+                nodeKey: node.node_key,
+              })
           : await store.completeTransition(transitionInput);
       if (transition.applied) {
         if (
@@ -1090,6 +1112,20 @@ function createSupabaseStore(
         }
       );
       throwOnError(error, 'collect_input_reply_failed');
+      return parseTransition(data);
+    },
+    async completeHandoff(input) {
+      const { data, error } = await db.rpc('complete_evolution_flow_handoff', {
+        p_dispatch_id: input.dispatchId,
+        p_dispatch_lease_token: input.dispatchLeaseToken,
+        p_step_id: input.stepId,
+        p_step_lease_token: input.stepLeaseToken,
+        p_flow_run_id: input.flowRunId,
+        p_event_id: input.eventId,
+        p_expected_transition_seq: input.expectedTransitionSeq,
+        p_node_key: input.nodeKey,
+      });
+      throwOnError(error, 'handoff_transition_failed');
       return parseTransition(data);
     },
     async completeRoot(dispatchId, leaseToken, state, errorCode) {

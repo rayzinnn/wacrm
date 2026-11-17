@@ -192,7 +192,6 @@ export function validateFlowForEvolutionActivation(
       });
     } else if (
       node.node_type === "send_media" ||
-      node.node_type === "handoff" ||
       node.node_type === "http_fetch"
     ) {
       issues.push({

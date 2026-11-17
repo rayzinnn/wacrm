@@ -92,8 +92,9 @@ describe('POST /api/flows/[id]/activate', () => {
       entry_node_id: 'start',
     }
     h.tables.flow_nodes = [
-      { flow_id: 'flow-1', node_key: 'start', node_type: 'start', config: { next_node_key: 'handoff' } },
-      { flow_id: 'flow-1', node_key: 'handoff', node_type: 'handoff', config: {} },
+      { flow_id: 'flow-1', node_key: 'start', node_type: 'start', config: { next_node_key: 'media' } },
+      { flow_id: 'flow-1', node_key: 'media', node_type: 'send_media', config: { media_type: 'image', media_url: '/test-image', next_node_key: 'end' } },
+      { flow_id: 'flow-1', node_key: 'end', node_type: 'end', config: {} },
     ]
 
     const res = await setStatus('active')
@@ -102,7 +103,7 @@ describe('POST /api/flows/[id]/activate', () => {
     expect(res.status).toBe(422)
     expect(body.issues).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ scope: 'node', node_key: 'handoff', field: 'node_type' }),
+        expect.objectContaining({ scope: 'node', node_key: 'media', field: 'node_type' }),
       ]),
     )
     expect(h.tables.flows[0].status).toBe('draft')

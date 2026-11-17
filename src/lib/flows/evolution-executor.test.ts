@@ -133,6 +133,11 @@ function harness(
       state.promptEventId = null;
       return { applied: true, transition_seq: state.run.transition_seq, status: 'active' };
     }),
+    completeHandoff: vi.fn(async () => {
+      state.run.transition_seq += 1;
+      state.run.status = 'handed_off';
+      return { applied: true, transition_seq: state.run.transition_seq, status: 'handed_off' };
+    }),
     completeRoot: vi.fn(async () => undefined),
   };
   return { state, store, execute: createEvolutionFlowExecutor(store) };
@@ -278,6 +283,24 @@ describe('Evolution Flow isolated executor', () => {
       .resolves.toEqual({ status: 'waiting', flowRunId: 'run-1', nodeKey: 'ask' });
     expect(h.store.sendText).not.toHaveBeenCalled();
     expect(h.store.completeCollectInputReply).not.toHaveBeenCalled();
+  });
+
+  it('finishes a handoff through one fenced local transition', async () => {
+    const h = harness([
+      { node_key: 'transfer', node_type: 'handoff', config: { note: 'Please follow up' } },
+    ]);
+
+    await expect(h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! }))
+      .resolves.toEqual({ status: 'done', flowRunId: 'run-1', transitions: 1 });
+    expect(h.store.completeHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: ROOT.event_id,
+        expectedTransitionSeq: 0,
+        nodeKey: 'transfer',
+      })
+    );
+    expect(h.store.completeTransition).not.toHaveBeenCalled();
+    expect(h.store.completeRoot).toHaveBeenCalledWith(ROOT.id, ROOT.lease_token, 'done', null);
   });
 
   it('sends once and advances only after a known accepted attempt', async () => {

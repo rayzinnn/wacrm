@@ -90,14 +90,15 @@ describe('PUT /api/flows/[id]', () => {
   it('does not save an Evolution-incompatible node into an active flow', async () => {
     seed('active')
     const nodes = [
-      { node_key: 'start', node_type: 'start', config: { next_node_key: 'handoff' } },
-      { node_key: 'handoff', node_type: 'handoff', config: {} },
+      { node_key: 'start', node_type: 'start', config: { next_node_key: 'media' } },
+      { node_key: 'media', node_type: 'send_media', config: { media_type: 'image', media_url: '/test-image', next_node_key: 'end' } },
+      { node_key: 'end', node_type: 'end', config: {} },
     ]
     const res = await put({ nodes })
     expect(res.status).toBe(422)
     const json = await res.json()
     expect(json.issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({ node_key: 'handoff', field: 'node_type', severity: 'error' }),
+      expect.objectContaining({ node_key: 'media', field: 'node_type', severity: 'error' }),
     ]))
     expect(h.rpc).not.toHaveBeenCalled()
   })
