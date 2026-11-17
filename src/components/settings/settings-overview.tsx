@@ -245,7 +245,7 @@ export function SettingsOverview({
   return (
     <section className="animate-in fade-in-50 space-y-6 duration-200">
       {/* Identity */}
-      <Card className="flex-row items-center gap-4 rounded-2xl px-5 py-5 shadow-sm">
+      <Card className="flex-row flex-wrap items-center gap-4 rounded-2xl px-5 py-5 shadow-sm">
         <Avatar size="lg" className="size-14">
           {profile?.avatar_url ? (
             <AvatarImage src={profile.avatar_url} alt={displayName} />
@@ -255,7 +255,7 @@ export function SettingsOverview({
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-semibold text-foreground">
+          <div className="break-words text-base font-semibold text-foreground">
             {displayName}
           </div>
           {profile?.email ? (
@@ -265,10 +265,12 @@ export function SettingsOverview({
           ) : null}
         </div>
         {roleMeta && RoleIcon ? (
-          <SettingsChip variant={roleMeta.variant}>
-            <RoleIcon />
-            {tRoles(accountRole!)}
-          </SettingsChip>
+          <div className="w-full sm:w-auto">
+            <SettingsChip variant={roleMeta.variant}>
+              <RoleIcon />
+              {tRoles(accountRole!)}
+            </SettingsChip>
+          </div>
         ) : null}
       </Card>
 
