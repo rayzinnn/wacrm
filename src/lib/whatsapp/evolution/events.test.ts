@@ -130,6 +130,51 @@ describe('normalizeWebhook', () => {
   })
 
   it.each([
+    ['buttonsResponseMessage', { buttonsResponseMessage: { selectedButtonId: 'OPTION_YES', selectedDisplayText: 'Yes, continue' } }, 'button', 'OPTION_YES', 'Yes, continue'],
+    ['templateButtonReplyMessage', { templateButtonReplyMessage: { selectedId: 'OPTION_NO', selectedDisplayText: 'No thanks' } }, 'button', 'OPTION_NO', 'No thanks'],
+    ['listResponseMessage', { listResponseMessage: { singleSelectReply: { selectedRowId: 'ROW_HOURS' }, title: 'Opening hours' } }, 'list', 'ROW_HOURS', 'Opening hours'],
+  ] as const)('normalizes explicit Baileys selection from %s', (messageType, message, replyKind, replyId, label) => {
+    const payload = cloneMessagePayload()
+    payloadKey(payload).id = 'SYNTHETIC_INTERACTIVE_MESSAGE_ID'
+    payloadData(payload).messageType = messageType
+    payloadData(payload).message = message
+
+    expect(normalizeWebhook(payload, messageFixture.receivedAt)).toEqual([expect.objectContaining({
+      kind: 'message',
+      eventKey: expect.stringMatching(/^message:sha256:/),
+      externalMessageId: 'SYNTHETIC_INTERACTIVE_MESSAGE_ID',
+      peer: '5521999990000@s.whatsapp.net',
+      occurredAt,
+      fromMe: false,
+      sentByApi: false,
+      contentType: 'interactive',
+      text: label,
+      mediaRef: null,
+      interactiveReplyId: replyId,
+      interactiveReplyKind: replyKind,
+    })])
+  })
+
+  it('does not infer an interactive reply from labels and filters echoes and groups', () => {
+    const missingId = cloneMessagePayload()
+    payloadData(missingId).messageType = 'buttonsResponseMessage'
+    payloadData(missingId).message = { buttonsResponseMessage: { selectedDisplayText: 'Sensitive label only' } }
+    expect(normalizeWebhook(missingId, messageFixture.receivedAt)).toEqual([])
+
+    const echo = cloneMessagePayload()
+    payloadData(echo).messageType = 'buttonsResponseMessage'
+    payloadData(echo).message = { buttonsResponseMessage: { selectedButtonId: 'SYNTHETIC_REPLY_ID' } }
+    payloadKey(echo).fromMe = true
+    expect(normalizeWebhook(echo, messageFixture.receivedAt)).toEqual([])
+
+    const group = cloneMessagePayload()
+    payloadData(group).messageType = 'listResponseMessage'
+    payloadData(group).message = { listResponseMessage: { singleSelectReply: { selectedRowId: 'SYNTHETIC_ROW_ID' } } }
+    payloadKey(group).remoteJid = '123456789012345678@g.us'
+    expect(normalizeWebhook(group, messageFixture.receivedAt)).toEqual([])
+  })
+
+  it.each([
     ['unresolved LID', '[TEST_PEER]@lid'],
     ['group JID', '123456789012345678@g.us'],
     ['broadcast JID', 'status@broadcast'],

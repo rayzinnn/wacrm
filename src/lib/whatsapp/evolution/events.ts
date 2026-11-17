@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readEvolutionInteractiveReply } from './interactive-reply'
 
 export type NormalizedConnectionEvent = {
   kind: 'connection'
@@ -19,6 +20,14 @@ export type NormalizedTextMessageEvent = {
   mediaRef: null
 }
 
+export type NormalizedInteractiveReplyEvent = Omit<NormalizedTextMessageEvent, 'contentType' | 'text' | 'mediaRef'> & {
+  contentType: 'interactive'
+  text: string | null
+  mediaRef: null
+  interactiveReplyId: string
+  interactiveReplyKind: 'button' | 'list'
+}
+
 export type NormalizedMediaKind = 'image' | 'document' | 'audio' | 'video'
 
 export type EvolutionMediaRef = {
@@ -36,7 +45,7 @@ export type NormalizedMediaMessageEvent = Omit<NormalizedTextMessageEvent, 'cont
   mediaRef: EvolutionMediaRef
 }
 
-export type NormalizedMessageEvent = NormalizedTextMessageEvent | NormalizedMediaMessageEvent
+export type NormalizedMessageEvent = NormalizedTextMessageEvent | NormalizedMediaMessageEvent | NormalizedInteractiveReplyEvent
 export type NormalizedEvent = NormalizedConnectionEvent | NormalizedMessageEvent
 
 export class NormalizationError extends Error {
@@ -143,6 +152,21 @@ function normalizeInboundText(payload: Record<string, unknown>): NormalizedMessa
     fromMe: false,
     sentByApi: false,
   } as const
+
+  const interactiveReply = readEvolutionInteractiveReply(data.messageType, data.message)
+  if (interactiveReply) {
+    if (data.key.id.length > 200 || !/^[A-Za-z0-9_.:-]+$/.test(data.key.id)) {
+      throw new NormalizationError()
+    }
+    return [{
+      ...baseEvent,
+      contentType: 'interactive',
+      text: interactiveReply.label,
+      mediaRef: null,
+      interactiveReplyId: interactiveReply.replyId,
+      interactiveReplyKind: interactiveReply.kind,
+    }]
+  }
 
   if (data.messageType === 'conversation') {
     if (!nonEmptyString(data.message.conversation)) throw new NormalizationError()

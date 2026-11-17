@@ -183,6 +183,7 @@ async function processClaim(
 
   const normalized = event.normalized_event
   const contentType = normalized.contentType
+  if (contentType === 'interactive') return applyClaim(db, event)
   if (contentType !== 'text') {
     if (typeof contentType !== 'string' || !MEDIA_KINDS.has(contentType as EvolutionMediaKind)) {
       return persistFailure(db, event, 'unsupported_media_kind', false)
@@ -232,7 +233,10 @@ async function applyClaim(
 ): Promise<WorkerOutcome> {
   let result: { data: unknown; error: unknown }
   try {
-    result = await db.rpc('apply_evolution_event', {
+    const rpc = isRecord(event.normalized_event) && event.normalized_event.contentType === 'interactive'
+      ? 'apply_evolution_interactive_reply'
+      : 'apply_evolution_event'
+    result = await db.rpc(rpc, {
       p_event_id: event.id,
       p_lease_token: event.lease_token,
     })

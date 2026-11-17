@@ -21,6 +21,23 @@ function projectNormalizedEvent(event: NormalizedEvent): Record<string, unknown>
     }
   }
 
+  if (event.contentType === 'interactive') {
+    return {
+      kind: 'message',
+      eventKey: event.eventKey,
+      externalMessageId: event.externalMessageId,
+      peer: event.peer,
+      occurredAt: event.occurredAt,
+      fromMe: event.fromMe,
+      sentByApi: event.sentByApi,
+      contentType: event.contentType,
+      text: event.text,
+      mediaRef: null,
+      interactiveReplyId: event.interactiveReplyId,
+      interactiveReplyKind: event.interactiveReplyKind,
+    }
+  }
+
   return {
     kind: 'message',
     eventKey: event.eventKey,
@@ -48,7 +65,8 @@ export async function enqueueEvents(
 
   const enabledMedia = new Set(enabledEvolutionInboundMedia())
   const rows = [...uniqueEvents.values()].map((event) => {
-    const mediaEvent = event.kind === 'message' && event.contentType !== 'text'
+    const mediaEvent = event.kind === 'message' &&
+      event.contentType !== 'text' && event.contentType !== 'interactive'
     const enabledMediaEvent = mediaEvent && enabledMedia.has(event.contentType)
     const disabledMediaEvent = mediaEvent && !enabledMediaEvent
 

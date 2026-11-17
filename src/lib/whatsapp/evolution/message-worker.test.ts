@@ -92,6 +92,25 @@ function mediaEvent(mediaState: 'pending' | 'stored', overrides: Record<string, 
   })
 }
 
+function interactiveEvent() {
+  return claimedEvent('message', {
+    normalized_event: {
+      kind: 'message',
+      eventKey: 'message:sha256:synthetic-interactive',
+      externalMessageId: 'SYNTHETIC_INTERACTIVE_MESSAGE_ID',
+      peer: '5511999999999@s.whatsapp.net',
+      occurredAt: '2026-11-16T17:00:00.000Z',
+      fromMe: false,
+      sentByApi: false,
+      contentType: 'interactive',
+      text: 'Synthetic selected label',
+      mediaRef: null,
+      interactiveReplyId: 'SYNTHETIC_REPLY_ID',
+      interactiveReplyKind: 'button',
+    },
+  })
+}
+
 function claimedEvent(kind = 'message', overrides: Record<string, unknown> = {}) {
   return {
     id: eventId,
@@ -106,6 +125,7 @@ function configureWorker(claims: unknown[] = [claimedEvent()]) {
   mocks.rpc.mockImplementation(async (name: string, args?: Record<string, unknown>) => {
     if (name === 'claim_evolution_message_events') return { data: claims, error: null }
     if (name === 'apply_evolution_event') return { data: [{ outcome: 'applied', message_row_id: 'message-row' }], error: null }
+    if (name === 'apply_evolution_interactive_reply') return { data: [{ outcome: 'applied', message_row_id: 'message-row' }], error: null }
     if (name === 'fail_evolution_event') {
       return { data: [{ state: args?.p_retryable === true ? 'pending' : 'failed' }], error: null }
     }
@@ -175,6 +195,19 @@ describe('runEvolutionMessageBatch', () => {
 
     await expect(runEvolutionMessageBatch()).resolves.toMatchObject({ done: 1, retry: 0, failed: 0 })
     expect(mocks.rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it('applies interactive replies through the isolated RPC without media or provider work', async () => {
+    configureWorker([interactiveEvent()])
+
+    await expect(runEvolutionMessageBatch()).resolves.toMatchObject({ done: 1, failed: 0, retry: 0 })
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'apply_evolution_interactive_reply', {
+      p_event_id: eventId,
+      p_lease_token: leaseToken,
+    })
+    expect(mediaMocks.decrypt).not.toHaveBeenCalled()
+    expect(mediaMocks.resolveMedia).not.toHaveBeenCalled()
+    expect(mediaMocks.stage).not.toHaveBeenCalled()
   })
 
   it('counts SQL failed and retry outcomes without applying an event a second time', async () => {

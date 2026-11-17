@@ -61,6 +61,21 @@ const inboundImage: NormalizedEvent = {
   },
 }
 
+const inboundInteractiveReply: NormalizedEvent = {
+  kind: 'message',
+  eventKey: 'message:sha256:interactive-1',
+  externalMessageId: 'SYNTHETIC_INTERACTIVE_MESSAGE_ID',
+  peer: '5521999990000@s.whatsapp.net',
+  occurredAt: '2026-11-16T16:53:58.000Z',
+  fromMe: false,
+  sentByApi: false,
+  contentType: 'interactive',
+  text: 'Synthetic selected label',
+  mediaRef: null,
+  interactiveReplyId: 'SYNTHETIC_REPLY_ID',
+  interactiveReplyKind: 'button',
+}
+
 function configureAdmin(data: Array<{ id: string }> | null, error: unknown = null) {
   const select = vi.fn().mockResolvedValue({ data, error })
   const upsert = vi.fn().mockReturnValue({ select })
@@ -283,6 +298,39 @@ describe('enqueueEvents', () => {
     })], { onConflict: 'connection_id,event_key', ignoreDuplicates: true })
     expect(query.upsert.mock.calls[0][0][0]).not.toHaveProperty('last_error_code')
     expect(query.upsert.mock.calls[0][0][0]).not.toHaveProperty('processed_at')
+  })
+
+  it('queues an interactive reply without treating it as media or adding raw envelope fields', async () => {
+    const query = configureAdmin([{ id: 'event-interactive' }])
+    const withRaw = {
+      ...inboundInteractiveReply,
+      token: 'PRIVATE_TOKEN_MARKER',
+      raw: { text: 'PRIVATE_RAW_TEXT_MARKER', id: 'PRIVATE_RAW_ID_MARKER' },
+    } as NormalizedEvent
+
+    await expect(enqueueEvents(connectionId, [withRaw])).resolves.toEqual({ inserted: 1, duplicates: 0 })
+    expect(query.upsert.mock.calls[0][0][0]).toEqual({
+      connection_id: connectionId,
+      event_key: inboundInteractiveReply.eventKey,
+      normalized_event: {
+        kind: 'message',
+        eventKey: inboundInteractiveReply.eventKey,
+        externalMessageId: inboundInteractiveReply.externalMessageId,
+        peer: inboundInteractiveReply.peer,
+        occurredAt: inboundInteractiveReply.occurredAt,
+        fromMe: false,
+        sentByApi: false,
+        contentType: 'interactive',
+        text: 'Synthetic selected label',
+        mediaRef: null,
+        interactiveReplyId: 'SYNTHETIC_REPLY_ID',
+        interactiveReplyKind: 'button',
+      },
+    })
+    const serialized = JSON.stringify(query.upsert.mock.calls[0][0])
+    expect(serialized).not.toContain('PRIVATE_TOKEN_MARKER')
+    expect(serialized).not.toContain('PRIVATE_RAW_TEXT_MARKER')
+    expect(serialized).not.toContain('PRIVATE_RAW_ID_MARKER')
   })
 
   it('deduplicates inbound message replay by event key and keeps the first projection', async () => {
