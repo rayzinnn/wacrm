@@ -5,6 +5,8 @@ const h = vi.hoisted(() => ({
   steps: [] as Record<string, unknown>[],
   queryError: null as { message: string } | null,
   completion: null as Record<string, unknown> | null,
+  completedWaits: [] as Record<string, unknown>[],
+  completedWaitLedger: null as Record<string, unknown> | null,
   prepare: vi.fn(),
   condition: vi.fn(),
   effect: vi.fn(),
@@ -18,7 +20,16 @@ vi.mock('@/lib/automations/admin-client', () => ({
       const query = {
         select: () => query,
         eq: () => query,
-        order: async () => ({ data: h.steps, error: h.queryError }),
+        not: () => query,
+        maybeSingle: async () => ({
+          data: h.completedWaitLedger,
+          error: h.queryError,
+        }),
+        order: () =>
+          table === 'automation_steps'
+            ? Promise.resolve({ data: h.steps, error: h.queryError })
+            : query,
+        limit: async () => ({ data: h.completedWaits, error: h.queryError }),
       };
       h.calls.push({ name: `from:${table}` });
       return query;
@@ -98,11 +109,24 @@ function completed(state: string) {
   h.completion = { id: ROOT_ID, state };
 }
 
+function waitLedger(actionKey: string) {
+  h.completedWaitLedger = {
+    id: ids[4],
+    dispatch_id: ROOT_ID,
+    action_key: actionKey,
+    state: 'done',
+    request_id: `evolution-step:${ids[4]}`,
+    result: { pending_execution_id: ids[5] },
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   h.calls = [];
   h.queryError = null;
   h.completion = null;
+  h.completedWaits = [];
+  h.completedWaitLedger = null;
   h.steps = [];
   h.prepare.mockResolvedValue({
     state: 'ready',
@@ -195,15 +219,67 @@ describe('executeEvolutionAutomationDispatch', () => {
     expect(h.effect.mock.calls.map(([args]) => args.step.id)).toEqual([noId]);
   });
 
+  it('recovers from a crash after wait ack using the latest validated persisted cursor', async () => {
+    const [waitId, afterWaitId] = ids;
+    h.steps = [step(waitId!, 'wait', 1), step(afterWaitId!, 'add_tag', 2)];
+    h.completedWaits = [
+      {
+        id: ids[5],
+        parked_step_id: waitId,
+        parent_step_id: null,
+        branch: null,
+        next_step_position: 2,
+        evolution_dispatch_step_id: ids[4],
+      },
+    ];
+    h.completedWaitLedger = {
+      id: ids[4],
+      dispatch_id: ROOT_ID,
+      action_key: waitId,
+      state: 'done',
+      request_id: `evolution-step:${ids[4]}`,
+      result: { pending_execution_id: ids[5] },
+    };
+    completed('done');
+
+    const result = await executeEvolutionAutomationDispatch(input);
+
+    expect(result).toEqual({ state: 'done', dispatch_id: ROOT_ID });
+    expect(h.effect.mock.calls.map(([args]) => args.step.id)).toEqual([
+      afterWaitId,
+    ]);
+  });
+
   it.each([
-    ['newly executed wait', { executed: true, state: 'done', result: {} }],
-    ['replayed wait', { executed: false, state: 'done', result: undefined }],
+    [
+      'newly executed wait',
+      {
+        executed: true,
+        state: 'done',
+        result: {
+          pending_execution_id: ids[5],
+          step_id: ids[4],
+        },
+      },
+    ],
+    [
+      'replayed wait',
+      {
+        executed: false,
+        state: 'done',
+        result: {
+          pending_execution_id: ids[5],
+          step_id: ids[4],
+        },
+      },
+    ],
   ])(
     'suspends on a %s without advancing or completing the root',
     async (_label, waitResult) => {
       const [waitId, sendId] = ids;
       h.steps = [step(waitId!, 'wait', 1), step(sendId!, 'send_message', 2)];
       h.effect.mockResolvedValue(waitResult);
+      waitLedger(waitId!);
 
       const result = await executeEvolutionAutomationDispatch(input);
 

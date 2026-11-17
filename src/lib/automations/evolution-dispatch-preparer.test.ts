@@ -186,6 +186,25 @@ describe('prepareEvolutionAutomationDispatch', () => {
     ]);
   });
 
+  it('resumes an already-started root without rechecking eligibility', async () => {
+    h.tables.evolution_event_dispatches = {
+      ...h.tables.evolution_event_dispatches,
+      automation_log_id: LOG_ID,
+    };
+    h.tables.automations = {
+      ...h.tables.automations,
+      is_active: false,
+      trigger_config: { keywords: ['no longer matches'], match_type: 'exact' },
+    };
+
+    const prepared = await prepareEvolutionAutomationDispatch(input());
+
+    expect(prepared.state).toBe('ready');
+    expect(h.rpcCalls.map((call) => call.name)).toEqual([
+      'start_evolution_event_dispatch',
+    ]);
+  });
+
   it('completes a nonmatching trigger as skipped without preparing execution', async () => {
     h.tables.automations = {
       ...h.tables.automations,

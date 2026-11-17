@@ -281,18 +281,20 @@ export async function prepareEvolutionAutomationDispatch(
       'Dispatch automation does not match the root account and user'
     );
   }
-  if (!automation.is_active) {
-    return completeSkipped(db, dispatchId, leaseToken);
-  }
-
+  const resumingStartedRoot = root.automation_log_id !== null;
   const message = inboundText(event.normalized_event);
-  const eligible = isEligibleInboundTextAutomation({
-    trigger_type: automation.trigger_type,
-    trigger_config: automation.trigger_config,
-    text: message.text,
-    isFirstInbound: input.isFirstInbound === true,
-  });
-  if (!eligible) return completeSkipped(db, dispatchId, leaseToken);
+  if (!resumingStartedRoot) {
+    if (!automation.is_active) {
+      return completeSkipped(db, dispatchId, leaseToken);
+    }
+    const eligible = isEligibleInboundTextAutomation({
+      trigger_type: automation.trigger_type,
+      trigger_config: automation.trigger_config,
+      text: message.text,
+      isFirstInbound: input.isFirstInbound === true,
+    });
+    if (!eligible) return completeSkipped(db, dispatchId, leaseToken);
+  }
 
   const { data: startData, error: startError } = await db.rpc(
     'start_evolution_event_dispatch',
@@ -317,6 +319,8 @@ export async function prepareEvolutionAutomationDispatch(
     started.state !== 'processing' ||
     !started.automation_log_id ||
     !UUID_PATTERN.test(started.automation_log_id) ||
+    (resumingStartedRoot &&
+      started.automation_log_id !== root.automation_log_id) ||
     started.flow_run_id !== null
   ) {
     throw new EvolutionDispatchPreparationError(

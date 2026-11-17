@@ -26,7 +26,7 @@ export type EvolutionAutomationOrchestrationResult =
       step_id: string;
     };
 
-interface PersistedAutomationStep {
+export interface PersistedAutomationStep {
   id: string;
   automation_id: string;
   parent_step_id: string | null;
@@ -42,13 +42,26 @@ interface RootCompletion {
   state: string;
 }
 
-interface ScopeResult {
+export interface EvolutionAutomationScopeResult {
   state: 'completed' | 'waiting' | 'processing' | 'failed' | 'unknown';
   stepId?: string;
+  pendingExecutionId?: string;
+  ledgerStepId?: string;
   errorCode?: string;
 }
 
-class InvalidAutomationDefinitionError extends Error {
+export interface EvolutionAutomationCursor {
+  parent_step_id: string | null;
+  branch: Branch | null;
+  next_step_position: number;
+}
+
+export type EvolutionAutomationRunContext = Pick<
+  PreparedEvolutionAutomationContext,
+  'dispatch'
+>;
+
+export class InvalidAutomationDefinitionError extends Error {
   constructor(readonly code: string) {
     super('Persisted automation step order or graph is invalid');
     this.name = 'InvalidAutomationDefinitionError';
@@ -70,7 +83,7 @@ function row<T>(data: unknown, label: string): T {
   return rows[0] as T;
 }
 
-function parseSteps(
+export function parsePersistedAutomationSteps(
   data: unknown,
   automationId: string
 ): PersistedAutomationStep[] {
@@ -119,8 +132,8 @@ function orderedScope(
   return scope;
 }
 
-async function completeRoot(
-  context: PreparedEvolutionAutomationContext,
+export async function completeEvolutionAutomationRoot(
+  context: EvolutionAutomationRunContext,
   state: TerminalRootState,
   errorCode: string | null
 ): Promise<EvolutionAutomationOrchestrationResult> {
@@ -142,7 +155,7 @@ async function completeRoot(
   return { state, dispatch_id: context.dispatch.id };
 }
 
-function waiting(context: PreparedEvolutionAutomationContext, stepId: string) {
+function waiting(context: EvolutionAutomationRunContext, stepId: string) {
   return {
     state: 'waiting' as const,
     dispatch_id: context.dispatch.id,
@@ -150,10 +163,7 @@ function waiting(context: PreparedEvolutionAutomationContext, stepId: string) {
   };
 }
 
-function processing(
-  context: PreparedEvolutionAutomationContext,
-  stepId: string
-) {
+function processing(context: EvolutionAutomationRunContext, stepId: string) {
   return {
     state: 'processing' as const,
     dispatch_id: context.dispatch.id,
@@ -171,13 +181,16 @@ const PERMANENT_LOCAL_STEP_ERRORS = new Set([
 ]);
 
 async function runScope(
-  context: PreparedEvolutionAutomationContext,
+  context: EvolutionAutomationRunContext,
   steps: PersistedAutomationStep[],
   parentStepId: string | null,
   branch: Branch | null,
+  startPosition: number,
   visiting: Set<string>
-): Promise<ScopeResult> {
-  const scope = orderedScope(steps, parentStepId, branch);
+): Promise<EvolutionAutomationScopeResult> {
+  const scope = orderedScope(steps, parentStepId, branch).filter(
+    (step) => step.position >= startPosition
+  );
   for (const persisted of scope) {
     const step = persisted as AutomationStep;
     let state: string;
@@ -271,7 +284,20 @@ async function runScope(
     }
 
     if (step.step_type === 'wait') {
-      return { state: 'waiting', stepId: step.id };
+      const checkpoint = await loadPersistedWaitCheckpoint(context, step.id);
+      if (!checkpoint) {
+        return {
+          state: 'failed',
+          stepId: step.id,
+          errorCode: 'wait_checkpoint_invalid',
+        };
+      }
+      return {
+        state: 'waiting',
+        stepId: step.id,
+        pendingExecutionId: checkpoint.pendingExecutionId,
+        ledgerStepId: checkpoint.ledgerStepId,
+      };
     }
 
     if (step.step_type === 'condition') {
@@ -280,12 +306,166 @@ async function runScope(
         steps,
         step.id,
         selectedBranch,
+        Number.NEGATIVE_INFINITY,
         new Set(visiting).add(step.id)
       );
       if (nested.state !== 'completed') return nested;
     }
   }
   return { state: 'completed' };
+}
+
+async function loadPersistedWaitCheckpoint(
+  context: EvolutionAutomationRunContext,
+  stepId: string
+): Promise<{ pendingExecutionId: string; ledgerStepId: string } | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('evolution_dispatch_steps')
+    .select('id,dispatch_id,action_key,state,request_id,result')
+    .eq('dispatch_id', context.dispatch.id)
+    .eq('action_key', stepId)
+    .maybeSingle();
+  if (error)
+    throw new Error('Could not load persisted Evolution wait checkpoint');
+  if (
+    !data ||
+    data.dispatch_id !== context.dispatch.id ||
+    data.action_key !== stepId ||
+    data.state !== 'done' ||
+    data.request_id !== `evolution-step:${data.id}` ||
+    !isRecord(data.result) ||
+    typeof data.result.pending_execution_id !== 'string' ||
+    !UUID_PATTERN.test(data.result.pending_execution_id)
+  ) {
+    return null;
+  }
+  return {
+    pendingExecutionId: data.result.pending_execution_id,
+    ledgerStepId: data.id,
+  };
+}
+
+function cursorForCompletedWait(
+  steps: PersistedAutomationStep[],
+  cursor: EvolutionAutomationCursor
+): EvolutionAutomationCursor {
+  const { parent_step_id: parentStepId, branch, next_step_position } = cursor;
+  if (
+    !Number.isInteger(next_step_position) ||
+    next_step_position < 1 ||
+    (parentStepId === null && branch !== null) ||
+    (parentStepId !== null && branch === null)
+  ) {
+    throw new InvalidAutomationDefinitionError('wait_cursor_invalid');
+  }
+  if (parentStepId !== null) {
+    const parent = steps.find((step) => step.id === parentStepId);
+    if (!parent || parent.step_type !== 'condition') {
+      throw new InvalidAutomationDefinitionError('wait_cursor_parent_invalid');
+    }
+    const branchHasSteps = steps.some(
+      (step) => step.parent_step_id === parent.id && step.branch === branch
+    );
+    if (!branchHasSteps) {
+      throw new InvalidAutomationDefinitionError('wait_cursor_branch_invalid');
+    }
+  }
+  return cursor;
+}
+
+/** Runs from a persisted wait cursor and ascends out of completed branches. */
+export async function runEvolutionAutomationFromCursor(
+  context: EvolutionAutomationRunContext,
+  steps: PersistedAutomationStep[],
+  cursor: EvolutionAutomationCursor
+): Promise<EvolutionAutomationScopeResult> {
+  let current = cursorForCompletedWait(steps, cursor);
+  while (true) {
+    const outcome = await runScope(
+      context,
+      steps,
+      current.parent_step_id,
+      current.branch,
+      current.next_step_position,
+      new Set()
+    );
+    if (outcome.state !== 'completed' || current.parent_step_id === null) {
+      return outcome;
+    }
+
+    const parent = steps.find((step) => step.id === current.parent_step_id);
+    if (!parent || parent.step_type !== 'condition') {
+      throw new InvalidAutomationDefinitionError('wait_cursor_parent_invalid');
+    }
+    current = {
+      parent_step_id: parent.parent_step_id,
+      branch: parent.parent_step_id === null ? null : parent.branch,
+      next_step_position: parent.position + 1,
+    };
+  }
+}
+
+async function loadLatestCompletedWaitCursor(
+  context: EvolutionAutomationRunContext,
+  steps: PersistedAutomationStep[]
+): Promise<EvolutionAutomationCursor | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('automation_pending_executions')
+    .select(
+      'id,parked_step_id,parent_step_id,branch,next_step_position,status,evolution_dispatch_step_id'
+    )
+    .eq('log_id', context.dispatch.automation_log_id)
+    .eq('account_id', context.dispatch.account_id)
+    .eq('automation_id', context.dispatch.automation_id)
+    .eq('status', 'done')
+    .not('evolution_dispatch_step_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (error) throw new Error('Could not load completed Evolution wait cursor');
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const pending = data[0];
+  if (
+    !pending ||
+    typeof pending !== 'object' ||
+    !('parked_step_id' in pending) ||
+    !('parent_step_id' in pending) ||
+    !('branch' in pending) ||
+    !('next_step_position' in pending) ||
+    !('evolution_dispatch_step_id' in pending) ||
+    typeof pending.parked_step_id !== 'string' ||
+    typeof pending.evolution_dispatch_step_id !== 'string' ||
+    typeof pending.next_step_position !== 'number'
+  ) {
+    throw new InvalidAutomationDefinitionError('wait_cursor_invalid');
+  }
+  const { data: ledger, error: ledgerError } = await supabaseAdmin()
+    .from('evolution_dispatch_steps')
+    .select('id,dispatch_id,action_key,state,request_id,result')
+    .eq('id', pending.evolution_dispatch_step_id)
+    .maybeSingle();
+  const parked = steps.find((step) => step.id === pending.parked_step_id);
+  if (
+    ledgerError ||
+    !ledger ||
+    ledger.dispatch_id !== context.dispatch.id ||
+    ledger.action_key !== pending.parked_step_id ||
+    ledger.state !== 'done' ||
+    ledger.request_id !== `evolution-step:${ledger.id}` ||
+    !isRecord(ledger.result) ||
+    ledger.result.pending_execution_id !== pending.id ||
+    !parked ||
+    parked.step_type !== 'wait' ||
+    parked.parent_step_id !== pending.parent_step_id ||
+    parked.branch !== pending.branch ||
+    parked.position + 1 !== pending.next_step_position
+  ) {
+    throw new InvalidAutomationDefinitionError('wait_cursor_ledger_invalid');
+  }
+  return {
+    parent_step_id: pending.parent_step_id as string | null,
+    branch: pending.branch as Branch | null,
+    next_step_position: pending.next_step_position,
+  };
 }
 
 /** Runs the reachable steps of one already-claimed Evolution automation root. */
@@ -308,38 +488,55 @@ export async function executeEvolutionAutomationDispatch(
 
   let steps: PersistedAutomationStep[];
   try {
-    steps = parseSteps(data, context.dispatch.automation_id);
+    steps = parsePersistedAutomationSteps(data, context.dispatch.automation_id);
   } catch {
-    return completeRoot(context, 'failed', 'automation_steps_invalid');
+    return completeEvolutionAutomationRoot(
+      context,
+      'failed',
+      'automation_steps_invalid'
+    );
   }
 
-  let outcome: ScopeResult;
+  let outcome: EvolutionAutomationScopeResult;
   try {
-    outcome = await runScope(context, steps, null, null, new Set());
+    const cursor = await loadLatestCompletedWaitCursor(context, steps);
+    outcome = await runEvolutionAutomationFromCursor(
+      context,
+      steps,
+      cursor ?? {
+        parent_step_id: null,
+        branch: null,
+        next_step_position: 1,
+      }
+    );
   } catch (error) {
     if (error instanceof InvalidAutomationDefinitionError) {
-      return completeRoot(context, 'failed', error.code);
+      return completeEvolutionAutomationRoot(context, 'failed', error.code);
     }
     if (
       error instanceof EvolutionAutomationStepError &&
       PERMANENT_LOCAL_STEP_ERRORS.has(error.code)
     ) {
-      return completeRoot(context, 'failed', error.code);
+      return completeEvolutionAutomationRoot(context, 'failed', error.code);
     }
     throw error;
   }
 
   switch (outcome.state) {
     case 'completed':
-      return completeRoot(context, 'done', null);
+      return completeEvolutionAutomationRoot(context, 'done', null);
     case 'failed':
-      return completeRoot(
+      return completeEvolutionAutomationRoot(
         context,
         'failed',
         outcome.errorCode ?? 'automation_step_failed'
       );
     case 'unknown':
-      return completeRoot(context, 'unknown', 'outcome_unknown');
+      return completeEvolutionAutomationRoot(
+        context,
+        'unknown',
+        'outcome_unknown'
+      );
     case 'waiting':
       return waiting(context, outcome.stepId!);
     case 'processing':
