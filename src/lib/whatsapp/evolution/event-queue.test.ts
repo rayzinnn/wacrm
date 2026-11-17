@@ -9,8 +9,8 @@ vi.mock('@/lib/flows/admin-client', () => ({
   },
 }))
 
-vi.mock('./capabilities', () => ({
-  getEvolutionCapabilities: () => ({ media: mocks.mediaCapabilities }),
+vi.mock('./inbound-media-capability', () => ({
+  enabledEvolutionInboundMedia: () => mocks.mediaCapabilities,
 }))
 
 import { EventQueueError, enqueueEvents } from './event-queue'

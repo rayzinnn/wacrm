@@ -254,6 +254,13 @@ describe('resolveMedia', () => {
       contentType: 'audio',
     },
     {
+      mediaType: 'audioMessage',
+      fileName: 'voice.oga',
+      mimetype: 'audio/ogg; codecs=opus',
+      bytes: Buffer.from('OggS\u0000synthetic-audio'),
+      contentType: 'audio',
+    },
+    {
       mediaType: 'videoMessage',
       fileName: 'clip.mp4',
       mimetype: 'video/mp4',

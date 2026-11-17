@@ -19,6 +19,7 @@ const UNAVAILABLE = {
 type FlowBatchSummary = {
   claimed: number;
   done: number;
+  skipped: number;
   waiting: number;
   unsupported: number;
   terminalNonSuccess: number;
@@ -67,6 +68,7 @@ function summarizeBatch(result: unknown): FlowBatchSummary {
   const summary: FlowBatchSummary = {
     claimed: result.claimed,
     done: 0,
+    skipped: 0,
     waiting: 0,
     unsupported: 0,
     terminalNonSuccess: 0,
@@ -81,6 +83,9 @@ function summarizeBatch(result: unknown): FlowBatchSummary {
     switch (outcome.status) {
       case 'done':
         summary.done += 1;
+        break;
+      case 'skipped':
+        summary.skipped += 1;
         break;
       case 'waiting':
         summary.waiting += 1;

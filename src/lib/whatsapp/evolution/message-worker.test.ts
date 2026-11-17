@@ -21,8 +21,8 @@ vi.mock('@/lib/flows/admin-client', () => ({
 }))
 
 vi.mock('@/lib/whatsapp/encryption', () => ({ decrypt: mediaMocks.decrypt }))
-vi.mock('./capabilities', () => ({
-  getEvolutionCapabilities: () => ({ media: mediaMocks.enabledMedia }),
+vi.mock('./inbound-media-capability', () => ({
+  enabledEvolutionInboundMedia: () => mediaMocks.enabledMedia,
 }))
 vi.mock('./media', () => {
   class MockEvolutionMediaError extends Error {

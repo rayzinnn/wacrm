@@ -2,6 +2,19 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
+import { matchesEvolutionFlowTrigger } from '@/lib/flows/evolution-trigger';
+import { decrypt } from '@/lib/whatsapp/encryption';
+import {
+  assertAllowedEvolutionOrigin,
+} from '@/lib/whatsapp/evolution/client';
+import {
+  createEvolutionSendAdapter,
+  createEvolutionSendReservationAdapter,
+  type EvolutionTextReservationResult,
+  type EvolutionTextSendInput,
+  type EvolutionTextSendResult,
+} from '@/lib/whatsapp/evolution/send-adapter';
+import type { EvolutionCredentials } from '@/lib/whatsapp/evolution/types';
 
 type JsonObject = Record<string, unknown>;
 
@@ -13,8 +26,10 @@ interface DispatchRoot {
   flow_id: string | null;
   flow_run_id: string | null;
   event_id: string | null;
+  user_id: string;
   account_id: string;
   contact_id: string | null;
+  conversation_id: string | null;
 }
 
 interface FlowRun {
@@ -26,6 +41,8 @@ interface FlowRun {
   transition_seq: number;
   status: string;
   vars: unknown;
+  user_id: string;
+  conversation_id: string | null;
 }
 
 interface FlowNode {
@@ -41,6 +58,22 @@ interface StepClaim {
   lease_token: string | null;
   request_id: string | null;
   should_execute: boolean;
+  send_attempt_id?: string | null;
+  lease_acquired?: boolean;
+}
+
+interface SendStepClaim extends StepClaim {
+  send_attempt_id: string | null;
+  lease_acquired: boolean;
+}
+
+interface EvolutionFlowSendContext {
+  connectionId: string;
+  conversationId: string;
+  recipient: string;
+  text: string;
+  credentials: EvolutionCredentials;
+  senderId: string;
 }
 
 interface TransitionInput {
@@ -51,7 +84,7 @@ interface TransitionInput {
   flowRunId: string;
   eventId: string;
   expectedTransitionSeq: number;
-  eventType: 'started' | 'node_entered' | 'completed';
+  eventType: 'started' | 'node_entered' | 'message_sent' | 'completed';
   nodeKey: string;
   payload: JsonObject;
   nextNodeKey: string | null;
@@ -75,6 +108,7 @@ interface SetTagTransitionInput {
 
 export interface EvolutionFlowStore {
   loadRoot(dispatchId: string): Promise<DispatchRoot | null>;
+  isEntryEligible(root: DispatchRoot): Promise<boolean>;
   startRoot(dispatchId: string, leaseToken: string): Promise<string | null>;
   loadRun(runId: string): Promise<FlowRun | null>;
   loadNodes(flowId: string): Promise<FlowNode[]>;
@@ -88,6 +122,29 @@ export interface EvolutionFlowStore {
     leaseToken: string,
     actionKey: string
   ): Promise<StepClaim>;
+  claimSendStep(
+    dispatchId: string,
+    leaseToken: string,
+    actionKey: string
+  ): Promise<SendStepClaim>;
+  loadSendContext(
+    root: DispatchRoot,
+    run: FlowRun,
+    config: JsonObject
+  ): Promise<EvolutionFlowSendContext>;
+  sendText(input: EvolutionTextSendInput): Promise<EvolutionTextSendResult>;
+  reconcileSend(
+    input: EvolutionTextSendInput
+  ): Promise<EvolutionTextReservationResult>;
+  linkSendAttempt(input: {
+    stepId: string;
+    dispatchLeaseToken: string;
+    stepLeaseToken: string;
+    requestId: string;
+    attemptId: string;
+    state: 'processing' | 'failed' | 'unknown';
+    errorCode: string | null;
+  }): Promise<void>;
   completeTransition(input: TransitionInput): Promise<{
     applied: boolean;
     transition_seq: number;
@@ -101,12 +158,13 @@ export interface EvolutionFlowStore {
   completeRoot(
     dispatchId: string,
     leaseToken: string,
-    state: 'done' | 'failed',
+    state: 'done' | 'skipped' | 'failed',
     errorCode: string | null
   ): Promise<void>;
 }
 
 export type EvolutionFlowExecutionResult =
+  | { status: 'skipped' }
   | { status: 'done'; flowRunId: string; transitions: number }
   | { status: 'waiting'; flowRunId: string; nodeKey: string }
   | {
@@ -148,6 +206,23 @@ function parseClaim(value: unknown): StepClaim {
     throw new EvolutionFlowExecutionError('step_claim_invalid');
   }
   return row as unknown as StepClaim;
+}
+
+function parseSendClaim(value: unknown): SendStepClaim {
+  const row = firstRow(value);
+  if (
+    !isObject(row) ||
+    typeof row.step_id !== 'string' ||
+    typeof row.state !== 'string' ||
+    typeof row.should_execute !== 'boolean' ||
+    typeof row.lease_acquired !== 'boolean' ||
+    (row.lease_token !== null && typeof row.lease_token !== 'string') ||
+    (row.request_id !== null && typeof row.request_id !== 'string') ||
+    (row.send_attempt_id !== null && typeof row.send_attempt_id !== 'string')
+  ) {
+    throw new EvolutionFlowExecutionError('send_step_claim_invalid');
+  }
+  return row as unknown as SendStepClaim;
 }
 
 function parseTransition(value: unknown): {
@@ -203,6 +278,23 @@ function actionKey(run: FlowRun, nodeKey: string): string {
   return value;
 }
 
+function sendTextFromConfig(config: JsonObject, vars: unknown): string {
+  if (typeof config.text !== 'string' || config.text.trim() === '')
+    throw new EvolutionFlowExecutionError('send_message_text_invalid');
+  if (!isObject(vars) && /\{\{vars\.[a-zA-Z0-9_]+\}\}/.test(config.text))
+    throw new EvolutionFlowExecutionError('run_vars_invalid');
+  const text = config.text.replace(
+    /\{\{vars\.([a-zA-Z0-9_]+)\}\}/g,
+    (_match, key: string) => {
+      const value = isObject(vars) ? vars[key] : undefined;
+      return value === undefined || value === null ? '' : String(value);
+    }
+  );
+  if (text.trim() === '')
+    throw new EvolutionFlowExecutionError('send_message_text_invalid');
+  return text;
+}
+
 const TERMINAL_STATUSES = new Set([
   'completed',
   'handed_off',
@@ -233,8 +325,13 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
     if (root.state !== 'processing' || root.lease_token !== input.leaseToken)
       throw new EvolutionFlowExecutionError('stale_root_lease');
 
+    if (!root.flow_run_id && !(await store.isEntryEligible(root))) {
+      await store.completeRoot(root.id, input.leaseToken, 'skipped', null);
+      return { status: 'skipped' };
+    }
+
     const flowRunId = await store.startRoot(root.id, input.leaseToken);
-    if (!flowRunId) throw new EvolutionFlowExecutionError('root_start_skipped');
+    if (!flowRunId) return { status: 'skipped' };
     const nodes = await store.loadNodes(root.flow_id);
     const nodesByKey = new Map(nodes.map((node) => [node.node_key, node]));
     let transitions = 0;
@@ -275,6 +372,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         node.node_type !== 'start' &&
         node.node_type !== 'condition' &&
         node.node_type !== 'set_tag' &&
+        node.node_type !== 'send_message' &&
         node.node_type !== 'end'
       ) {
         return {
@@ -331,6 +429,13 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
           node.config.next_node_key,
           'set_tag_target_invalid'
         );
+      } else if (node.node_type === 'send_message') {
+        eventType = 'message_sent';
+        payload = { outcome: 'accepted' };
+        nextNodeKey = requiredString(
+          node.config.next_node_key,
+          'send_message_target_invalid'
+        );
       } else {
         eventType = 'completed';
         nextNodeKey = null;
@@ -341,12 +446,22 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (nextNodeKey !== null && !nodesByKey.has(nextNodeKey))
         throw new EvolutionFlowExecutionError('next_node_missing');
 
-      const claim = await store.claimStep(
-        root.id,
-        input.leaseToken,
-        actionKey(run, node.node_key)
-      );
-      if (!claim.should_execute) {
+      const isSendMessage = node.node_type === 'send_message';
+      const claim = isSendMessage
+        ? await store.claimSendStep(
+            root.id,
+            input.leaseToken,
+            actionKey(run, node.node_key)
+          )
+        : await store.claimStep(
+            root.id,
+            input.leaseToken,
+            actionKey(run, node.node_key)
+          );
+      if (
+        !claim.should_execute &&
+        (!isSendMessage || !claim.lease_acquired)
+      ) {
         if (claim.state === 'done') {
           const refreshed = await store.loadRun(flowRunId);
           if (!refreshed || refreshed.transition_seq <= run.transition_seq)
@@ -354,14 +469,92 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
           transitions += 1;
           continue;
         }
+        if (isSendMessage && ['failed', 'unknown', 'skipped'].includes(claim.state))
+          throw new EvolutionFlowExecutionError(`send_step_${claim.state}`);
         return { status: 'waiting', flowRunId, nodeKey: node.node_key };
       }
       if (
         claim.state !== 'processing' ||
         !claim.lease_token ||
-        !claim.request_id
+        !claim.request_id ||
+        (isSendMessage &&
+          (!claim.lease_acquired ||
+            claim.request_id !== `evolution-step:${claim.step_id}` ||
+            (claim.should_execute && claim.send_attempt_id !== null) ||
+            (!claim.should_execute && !claim.send_attempt_id)))
       )
-        throw new EvolutionFlowExecutionError('step_claim_invalid');
+        throw new EvolutionFlowExecutionError(
+          isSendMessage ? 'send_step_claim_invalid' : 'step_claim_invalid'
+        );
+
+      if (isSendMessage) {
+        const sendContext = await store.loadSendContext(root, run, node.config);
+        const sendInput: EvolutionTextSendInput = {
+          ...sendContext,
+          senderType: 'bot',
+          senderId: sendContext.senderId,
+          requestId: claim.request_id,
+        };
+        let attemptId: string;
+        let outcome: 'pending' | 'accepted' | 'rejected' | 'unknown';
+
+        if (claim.should_execute) {
+          const sent = await store.sendText(sendInput);
+          if (!sent.shouldSend || !sent.attemptId) {
+            throw new EvolutionFlowExecutionError('send_reservation_invalid');
+          }
+          attemptId = sent.attemptId;
+          outcome = sent.outcome;
+        } else {
+          const replay = await store.reconcileSend(sendInput);
+          if (
+            replay.attemptId !== claim.send_attempt_id ||
+            replay.shouldSend
+          ) {
+            throw new EvolutionFlowExecutionError('send_reservation_replay_invalid');
+          }
+          attemptId = replay.attemptId;
+          outcome = replay.outcome;
+        }
+
+        if (outcome === 'pending') {
+          await store.linkSendAttempt({
+            stepId: claim.step_id,
+            dispatchLeaseToken: input.leaseToken,
+            stepLeaseToken: claim.lease_token,
+            requestId: claim.request_id,
+            attemptId,
+            state: 'processing',
+            errorCode: null,
+          });
+          return { status: 'waiting', flowRunId, nodeKey: node.node_key };
+        }
+        if (outcome === 'rejected' || outcome === 'unknown') {
+          await store.linkSendAttempt({
+            stepId: claim.step_id,
+            dispatchLeaseToken: input.leaseToken,
+            stepLeaseToken: claim.lease_token,
+            requestId: claim.request_id,
+            attemptId,
+            state: outcome === 'rejected' ? 'failed' : 'unknown',
+            errorCode:
+              outcome === 'rejected' ? 'provider_rejected' : 'delivery_unknown',
+          });
+          throw new EvolutionFlowExecutionError(
+            outcome === 'rejected' ? 'send_rejected' : 'send_outcome_unknown'
+          );
+        }
+
+        await store.linkSendAttempt({
+          stepId: claim.step_id,
+          dispatchLeaseToken: input.leaseToken,
+          stepLeaseToken: claim.lease_token,
+          requestId: claim.request_id,
+          attemptId,
+          state: 'processing',
+          errorCode: null,
+        });
+      }
 
       const transitionInput = {
         dispatchId: root.id,
@@ -435,17 +628,69 @@ function throwOnError(error: { code?: string } | null, code: string): void {
 function createSupabaseStore(
   db: Pick<SupabaseClient, 'from' | 'rpc'>
 ): EvolutionFlowStore {
+  const sendText = createEvolutionSendAdapter(db);
+  const reconcileSend = createEvolutionSendReservationAdapter(db);
   return {
     async loadRoot(dispatchId) {
       const { data, error } = await db
         .from('evolution_event_dispatches')
         .select(
-          'id,engine,state,lease_token,flow_id,flow_run_id,event_id,account_id,contact_id'
+          'id,engine,state,lease_token,flow_id,flow_run_id,event_id,user_id,account_id,contact_id,conversation_id'
         )
         .eq('id', dispatchId)
         .maybeSingle();
       throwOnError(error, 'root_read_failed');
       return (data as DispatchRoot | null) ?? null;
+    },
+    async isEntryEligible(root) {
+      if (!root.flow_id || !root.event_id) return false;
+      const [{ data: flow, error: flowError }, { data: event, error: eventError }] =
+        await Promise.all([
+          db.from('flows')
+            .select('account_id,status,trigger_type,trigger_config')
+            .eq('id', root.flow_id)
+            .maybeSingle(),
+          db.from('evolution_events')
+            .select('normalized_event')
+            .eq('id', root.event_id)
+            .maybeSingle(),
+        ]);
+      throwOnError(flowError, 'flow_read_failed');
+      throwOnError(eventError, 'event_read_failed');
+      if (!isObject(flow) || flow.account_id !== root.account_id || flow.status !== 'active')
+        return false;
+      const normalized = isObject(event) ? event.normalized_event : null;
+      if (!isObject(normalized) || normalized.kind !== 'message' ||
+          normalized.contentType !== 'text' || typeof normalized.text !== 'string')
+        throw new EvolutionFlowExecutionError('entry_event_invalid');
+
+      let isFirstInbound = false;
+      if (flow.trigger_type === 'first_inbound_message') {
+        if (!root.contact_id || typeof normalized.externalMessageId !== 'string' ||
+            typeof normalized.occurredAt !== 'string')
+          throw new EvolutionFlowExecutionError('entry_event_invalid');
+        const { data: conversations, error: conversationsError } = await db
+          .from('conversations')
+          .select('id')
+          .eq('account_id', root.account_id)
+          .eq('contact_id', root.contact_id);
+        throwOnError(conversationsError, 'conversations_read_failed');
+        const conversationIds = (conversations ?? []).map((row) => row.id);
+        if (conversationIds.length === 0) return false;
+        const { data: inbound, error: inboundError } = await db
+          .from('messages')
+          .select('message_id')
+          .in('conversation_id', conversationIds)
+          .eq('sender_type', 'customer')
+          .lte('created_at', normalized.occurredAt)
+          .limit(2);
+        throwOnError(inboundError, 'inbound_history_read_failed');
+        isFirstInbound = inbound?.length === 1 &&
+          inbound[0].message_id === normalized.externalMessageId;
+      }
+      return matchesEvolutionFlowTrigger(
+        String(flow.trigger_type), flow.trigger_config, normalized.text, isFirstInbound
+      );
     },
     async startRoot(dispatchId, leaseToken) {
       const { data, error } = await db.rpc('start_evolution_event_dispatch', {
@@ -461,7 +706,7 @@ function createSupabaseStore(
       const { data, error } = await db
         .from('flow_runs')
         .select(
-          'id,flow_id,account_id,contact_id,current_node_key,transition_seq,status,vars'
+          'id,flow_id,account_id,user_id,contact_id,conversation_id,current_node_key,transition_seq,status,vars'
         )
         .eq('id', runId)
         .maybeSingle();
@@ -531,6 +776,151 @@ function createSupabaseStore(
       });
       throwOnError(error, 'step_claim_failed');
       return parseClaim(data);
+    },
+    async claimSendStep(dispatchId, leaseToken, actionKeyValue) {
+      const { data, error } = await db.rpc(
+        'claim_evolution_dispatch_send_step',
+        {
+          p_dispatch_id: dispatchId,
+          p_dispatch_lease_token: leaseToken,
+          p_action_key: actionKeyValue,
+          p_lease_seconds: 60,
+        }
+      );
+      throwOnError(error, 'send_step_claim_failed');
+      return parseSendClaim(data);
+    },
+    async loadSendContext(root, run, config) {
+      if (
+        !root.event_id ||
+        !root.user_id ||
+        !root.conversation_id ||
+        !root.contact_id ||
+        run.user_id !== root.user_id ||
+        run.conversation_id !== root.conversation_id
+      )
+        throw new EvolutionFlowExecutionError('send_root_lineage_invalid');
+
+      const { data: eventData, error: eventError } = await db
+        .from('evolution_events')
+        .select('id,connection_id,state,normalized_event')
+        .eq('id', root.event_id)
+        .maybeSingle();
+      throwOnError(eventError, 'send_event_read_failed');
+      if (!isObject(eventData) || eventData.id !== root.event_id || eventData.state !== 'done')
+        throw new EvolutionFlowExecutionError('send_event_invalid');
+      const normalized = isObject(eventData.normalized_event)
+        ? eventData.normalized_event
+        : null;
+      if (
+        !normalized ||
+        normalized.kind !== 'message' ||
+        normalized.contentType !== 'text' ||
+        normalized.fromMe !== false ||
+        normalized.sentByApi !== false ||
+        typeof normalized.peer !== 'string' ||
+        !/^\d{8,15}@s\.whatsapp\.net$/.test(normalized.peer)
+      )
+        throw new EvolutionFlowExecutionError('send_event_invalid');
+
+      const [conversationResult, contactResult, connectionResult] = await Promise.all([
+        db
+          .from('conversations')
+          .select('id,account_id,contact_id')
+          .eq('id', root.conversation_id)
+          .eq('account_id', root.account_id)
+          .maybeSingle(),
+        db
+          .from('contacts')
+          .select('id,account_id,phone_normalized')
+          .eq('id', root.contact_id)
+          .eq('account_id', root.account_id)
+          .maybeSingle(),
+        db
+          .from('whatsapp_connections')
+          .select('id,account_id,provider,base_url,instance_name,token_encrypted')
+          .eq('id', eventData.connection_id)
+          .eq('account_id', root.account_id)
+          .maybeSingle(),
+      ]);
+      throwOnError(conversationResult.error, 'send_conversation_read_failed');
+      throwOnError(contactResult.error, 'send_contact_read_failed');
+      throwOnError(connectionResult.error, 'send_connection_read_failed');
+
+      const conversation = conversationResult.data;
+      const contact = contactResult.data;
+      const connection = connectionResult.data;
+      const peerDigits = normalized.peer.slice(0, normalized.peer.indexOf('@'));
+      if (
+        !isObject(conversation) ||
+        conversation.id !== root.conversation_id ||
+        conversation.account_id !== root.account_id ||
+        conversation.contact_id !== root.contact_id ||
+        !isObject(contact) ||
+        contact.id !== root.contact_id ||
+        contact.account_id !== root.account_id ||
+        contact.phone_normalized !== peerDigits
+      )
+        throw new EvolutionFlowExecutionError('send_contact_lineage_invalid');
+      if (
+        !isObject(connection) ||
+        connection.id !== eventData.connection_id ||
+        connection.account_id !== root.account_id ||
+        connection.provider !== 'evolution' ||
+        typeof connection.instance_name !== 'string' ||
+        !connection.instance_name.trim() ||
+        typeof connection.token_encrypted !== 'string' ||
+        !connection.token_encrypted
+      )
+        throw new EvolutionFlowExecutionError('send_connection_invalid');
+
+      let credentials: EvolutionCredentials;
+      try {
+        credentials = {
+          baseUrl: assertAllowedEvolutionOrigin(String(connection.base_url)),
+          instanceId: connection.instance_name,
+          token: decrypt(connection.token_encrypted),
+        };
+      } catch {
+        throw new EvolutionFlowExecutionError('send_credentials_unavailable');
+      }
+      if (!credentials.token)
+        throw new EvolutionFlowExecutionError('send_credentials_unavailable');
+
+      return {
+        connectionId: connection.id,
+        conversationId: conversation.id,
+        recipient: normalized.peer,
+        text: sendTextFromConfig(config, run.vars),
+        credentials,
+        senderId: root.user_id,
+      };
+    },
+    sendText,
+    reconcileSend,
+    async linkSendAttempt(input) {
+      const { data, error } = await db.rpc(
+        'complete_evolution_dispatch_step',
+        {
+          p_step_id: input.stepId,
+          p_dispatch_lease_token: input.dispatchLeaseToken,
+          p_lease_token: input.stepLeaseToken,
+          p_state: input.state,
+          p_request_id: input.requestId,
+          p_send_attempt_id: input.attemptId,
+          p_result: null,
+          p_error_code: input.errorCode,
+        }
+      );
+      throwOnError(error, 'send_attempt_checkpoint_failed');
+      const row = firstRow(data);
+      if (
+        !isObject(row) ||
+        row.id !== input.stepId ||
+        row.state !== input.state ||
+        row.send_attempt_id !== input.attemptId
+      )
+        throw new EvolutionFlowExecutionError('send_attempt_checkpoint_invalid');
     },
     async completeTransition(input) {
       const { data, error } = await db.rpc(

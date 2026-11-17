@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { getEvolutionCapabilities } from './capabilities'
+import { enabledEvolutionInboundMedia } from './inbound-media-capability'
 import type { NormalizedEvent } from './events'
 
 export class EventQueueError extends Error {
@@ -46,7 +46,7 @@ export async function enqueueEvents(
     if (!uniqueEvents.has(event.eventKey)) uniqueEvents.set(event.eventKey, event)
   }
 
-  const enabledMedia = new Set(getEvolutionCapabilities().media)
+  const enabledMedia = new Set(enabledEvolutionInboundMedia())
   const rows = [...uniqueEvents.values()].map((event) => {
     const mediaEvent = event.kind === 'message' && event.contentType !== 'text'
     const enabledMediaEvent = mediaEvent && enabledMedia.has(event.contentType)

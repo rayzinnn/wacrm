@@ -13,8 +13,10 @@ const ROOT = {
   flow_id: 'flow-1',
   flow_run_id: 'run-1',
   event_id: 'event-1',
+  user_id: 'user-1',
   account_id: 'account-1',
   contact_id: 'contact-1',
+  conversation_id: 'conversation-1',
 };
 
 function harness(
@@ -31,11 +33,14 @@ function harness(
       transition_seq: 0,
       status: 'active',
       vars,
+      user_id: 'user-1',
+      conversation_id: 'conversation-1',
     },
     nodes: nodes.map((node) => ({ ...node, flow_id: 'flow-1' })),
   };
   const store: EvolutionFlowStore = {
     loadRoot: vi.fn(async () => ROOT),
+    isEntryEligible: vi.fn(async () => true),
     startRoot: vi.fn(async () => 'run-1'),
     loadRun: vi.fn(async () => ({ ...state.run })),
     loadNodes: vi.fn(async () => state.nodes),
@@ -52,6 +57,42 @@ function harness(
       request_id: `evolution-step:step-${state.run.transition_seq}`,
       should_execute: true,
     })),
+    claimSendStep: vi.fn(async () => ({
+      step_id: 'send-step-0',
+      state: 'processing',
+      lease_token: 'send-lease-0',
+      request_id: 'evolution-step:send-step-0',
+      send_attempt_id: null,
+      should_execute: true,
+      lease_acquired: true,
+    })),
+    loadSendContext: vi.fn(async (_root, _run, config) => ({
+      connectionId: 'connection-1',
+      conversationId: 'conversation-1',
+      recipient: '15551234567@s.whatsapp.net',
+      text: String(config.text),
+      credentials: {
+        baseUrl: 'http://127.0.0.1:8080',
+        instanceId: 'fixture',
+        token: 'synthetic',
+      },
+      senderId: 'user-1',
+    })),
+    sendText: vi.fn(async () => ({
+      attemptId: 'attempt-1',
+      messageRowId: 'message-row-1',
+      outcome: 'accepted' as const,
+      shouldSend: true,
+      externalMessageId: 'external-1',
+      persistenceUncertain: false,
+    })),
+    reconcileSend: vi.fn(async () => ({
+      attemptId: 'attempt-1',
+      messageRowId: 'message-row-1',
+      outcome: 'accepted' as const,
+      shouldSend: false,
+    })),
+    linkSendAttempt: vi.fn(async () => undefined),
     completeTransition: vi.fn(async (input) => {
       expect(input.dispatchId).toBe(ROOT.id);
       expect(input.dispatchLeaseToken).toBe(ROOT.lease_token);
@@ -84,6 +125,18 @@ function harness(
 }
 
 describe('Evolution Flow isolated executor', () => {
+  it('skips a nonmatching new root without creating a run or a step', async () => {
+    const h = harness([{ node_key: 'start', node_type: 'start', config: { next_node_key: 'end' } }]);
+    vi.mocked(h.store.loadRoot).mockResolvedValue({ ...ROOT, flow_run_id: null });
+    vi.mocked(h.store.isEntryEligible).mockResolvedValue(false);
+
+    await expect(h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! }))
+      .resolves.toEqual({ status: 'skipped' });
+    expect(h.store.startRoot).not.toHaveBeenCalled();
+    expect(h.store.claimStep).not.toHaveBeenCalled();
+    expect(h.store.completeRoot).toHaveBeenCalledWith(ROOT.id, ROOT.lease_token, 'skipped', null);
+  });
+
   it('checkpoints start, decision branch, and end through the fenced transition contract', async () => {
     const h = harness(
       [
@@ -142,8 +195,8 @@ describe('Evolution Flow isolated executor', () => {
     const h = harness([
       {
         node_key: 'send',
-        node_type: 'send_message',
-        config: { text: 'not sent' },
+        node_type: 'collect_input',
+        config: {},
       },
     ]);
 
@@ -156,11 +209,190 @@ describe('Evolution Flow isolated executor', () => {
       status: 'unsupported_node',
       flowRunId: 'run-1',
       nodeKey: 'send',
-      nodeType: 'send_message',
+      nodeType: 'collect_input',
     });
     expect(h.store.claimStep).not.toHaveBeenCalled();
     expect(h.store.completeTransition).not.toHaveBeenCalled();
     expect(h.store.completeRoot).not.toHaveBeenCalled();
+  });
+
+  it('sends once and advances only after a known accepted attempt', async () => {
+    const h = harness([
+      {
+        node_key: 'send',
+        node_type: 'send_message',
+        config: { text: 'Hello', next_node_key: 'finish' },
+      },
+      { node_key: 'finish', node_type: 'end', config: {} },
+    ]);
+
+    const result = await h.execute({
+      dispatchId: ROOT.id,
+      leaseToken: ROOT.lease_token!,
+    });
+
+    expect(result).toEqual({
+      status: 'done',
+      flowRunId: 'run-1',
+      transitions: 2,
+    });
+    expect(h.store.claimSendStep).toHaveBeenCalledWith(
+      ROOT.id,
+      ROOT.lease_token,
+      '0:send'
+    );
+    expect(h.store.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'Hello',
+        senderType: 'bot',
+        senderId: 'user-1',
+        requestId: 'evolution-step:send-step-0',
+      })
+    );
+    expect(h.store.linkSendAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: 'attempt-1',
+        state: 'processing',
+      })
+    );
+    expect(h.store.completeTransition).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        eventType: 'message_sent',
+        nodeKey: 'send',
+        payload: { outcome: 'accepted' },
+        nextNodeKey: 'finish',
+      })
+    );
+  });
+
+  it('replays an accepted linked attempt without another send', async () => {
+    const h = harness([
+      {
+        node_key: 'send',
+        node_type: 'send_message',
+        config: { text: 'Hello', next_node_key: 'finish' },
+      },
+      { node_key: 'finish', node_type: 'end', config: {} },
+    ]);
+    vi.mocked(h.store.claimSendStep).mockResolvedValueOnce({
+      step_id: 'send-step-0',
+      state: 'processing',
+      lease_token: 'send-lease-recovered',
+      request_id: 'evolution-step:send-step-0',
+      send_attempt_id: 'attempt-1',
+      should_execute: false,
+      lease_acquired: true,
+    });
+
+    const result = await h.execute({
+      dispatchId: ROOT.id,
+      leaseToken: ROOT.lease_token!,
+    });
+
+    expect(result.status).toBe('done');
+    expect(h.store.sendText).not.toHaveBeenCalled();
+    expect(h.store.reconcileSend).toHaveBeenCalledTimes(1);
+    expect(h.store.completeTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'message_sent', nodeKey: 'send' })
+    );
+  });
+
+  it('does not advance a pending reservation', async () => {
+    const h = harness([
+      {
+        node_key: 'send',
+        node_type: 'send_message',
+        config: { text: 'Hello', next_node_key: 'finish' },
+      },
+      { node_key: 'finish', node_type: 'end', config: {} },
+    ]);
+    vi.mocked(h.store.claimSendStep).mockResolvedValueOnce({
+      step_id: 'send-step-0',
+      state: 'processing',
+      lease_token: 'send-lease-recovered',
+      request_id: 'evolution-step:send-step-0',
+      send_attempt_id: 'attempt-1',
+      should_execute: false,
+      lease_acquired: true,
+    });
+    vi.mocked(h.store.reconcileSend).mockResolvedValueOnce({
+      attemptId: 'attempt-1',
+      messageRowId: 'message-row-1',
+      outcome: 'pending',
+      shouldSend: false,
+    });
+
+    await expect(
+      h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! })
+    ).resolves.toEqual({
+      status: 'waiting',
+      flowRunId: 'run-1',
+      nodeKey: 'send',
+    });
+    expect(h.store.sendText).not.toHaveBeenCalled();
+    expect(h.store.completeTransition).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on unknown replay and never advances', async () => {
+    const h = harness([
+      {
+        node_key: 'send',
+        node_type: 'send_message',
+        config: { text: 'Hello', next_node_key: 'finish' },
+      },
+      { node_key: 'finish', node_type: 'end', config: {} },
+    ]);
+    vi.mocked(h.store.claimSendStep).mockResolvedValueOnce({
+      step_id: 'send-step-0',
+      state: 'processing',
+      lease_token: 'send-lease-recovered',
+      request_id: 'evolution-step:send-step-0',
+      send_attempt_id: 'attempt-1',
+      should_execute: false,
+      lease_acquired: true,
+    });
+    vi.mocked(h.store.reconcileSend).mockResolvedValueOnce({
+      attemptId: 'attempt-1',
+      messageRowId: 'message-row-1',
+      outcome: 'unknown',
+      shouldSend: false,
+    });
+
+    await expect(
+      h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! })
+    ).rejects.toMatchObject({ code: 'send_outcome_unknown' });
+    expect(h.store.sendText).not.toHaveBeenCalled();
+    expect(h.store.completeTransition).not.toHaveBeenCalled();
+    expect(h.store.linkSendAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'unknown', attemptId: 'attempt-1' })
+    );
+  });
+
+  it('never sends when the send claim did not acquire its lease', async () => {
+    const h = harness([
+      {
+        node_key: 'send',
+        node_type: 'send_message',
+        config: { text: 'Hello', next_node_key: 'finish' },
+      },
+      { node_key: 'finish', node_type: 'end', config: {} },
+    ]);
+    vi.mocked(h.store.claimSendStep).mockResolvedValueOnce({
+      step_id: 'send-step-0',
+      state: 'processing',
+      lease_token: 'other-lease',
+      request_id: 'evolution-step:send-step-0',
+      send_attempt_id: null,
+      should_execute: true,
+      lease_acquired: false,
+    });
+
+    await expect(
+      h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! })
+    ).rejects.toMatchObject({ code: 'send_step_claim_invalid' });
+    expect(h.store.sendText).not.toHaveBeenCalled();
+    expect(h.store.completeTransition).not.toHaveBeenCalled();
   });
 
   it.each(['add', 'remove'] as const)(

@@ -4,7 +4,10 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function middleware(request: NextRequest) {
   if (
     request.method === 'GET' &&
-    request.nextUrl.pathname === '/api/whatsapp/evolution/events/cron'
+    (
+      request.nextUrl.pathname === '/api/whatsapp/evolution/events/cron' ||
+      request.nextUrl.pathname === '/api/whatsapp/evolution/flow/cron'
+    )
   ) {
     return NextResponse.next({ request })
   }

@@ -1,6 +1,7 @@
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { getEvolutionCapabilities, type EvolutionMediaKind } from './capabilities'
+import type { EvolutionMediaKind } from './capabilities'
+import { enabledEvolutionInboundMedia } from './inbound-media-capability'
 import { EvolutionMediaError, resolveMedia } from './media'
 import type { EvolutionMediaRef } from './media'
 import { EvolutionMediaStorageError, stageEvolutionInboundMedia } from './media-storage'
@@ -186,7 +187,7 @@ async function processClaim(
     if (typeof contentType !== 'string' || !MEDIA_KINDS.has(contentType as EvolutionMediaKind)) {
       return persistFailure(db, event, 'unsupported_media_kind', false)
     }
-    if (!getEvolutionCapabilities().media.includes(contentType as EvolutionMediaKind)) {
+    if (!enabledEvolutionInboundMedia().includes(contentType as EvolutionMediaKind)) {
       return persistFailure(db, event, 'unsupported_media_kind', false)
     }
 

@@ -65,6 +65,15 @@ const ROTATED = {
 };
 
 describe("middleware — refreshed auth cookies survive redirects", () => {
+  it.each([
+    '/api/whatsapp/evolution/events/cron',
+    '/api/whatsapp/evolution/flow/cron',
+  ])('lets the protected cron route verify its own bearer: %s', async (path) => {
+    const res = await middleware(new NextRequest(`https://app.test${path}`));
+    expect(res.status).toBe(200);
+    expect(getUserCalls).toBe(0);
+  });
+
   it("carries the rotated token when redirecting a signed-in user off /login", async () => {
     mockUser = { id: "user-1" };
     refreshedCookies = [ROTATED];

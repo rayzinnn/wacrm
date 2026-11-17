@@ -96,6 +96,7 @@ describe('GET /api/whatsapp/evolution/flow/cron', () => {
         flow: {
           claimed: 1,
           done: 0,
+          skipped: 0,
           waiting: 1,
           unsupported: 0,
           terminalNonSuccess: 0,
