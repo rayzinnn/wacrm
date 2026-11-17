@@ -6,7 +6,8 @@ export async function middleware(request: NextRequest) {
     request.method === 'GET' &&
     (
       request.nextUrl.pathname === '/api/whatsapp/evolution/events/cron' ||
-      request.nextUrl.pathname === '/api/whatsapp/evolution/flow/cron'
+      request.nextUrl.pathname === '/api/whatsapp/evolution/flow/cron' ||
+      request.nextUrl.pathname === '/api/whatsapp/evolution/automation/cron'
     )
   ) {
     return NextResponse.next({ request })

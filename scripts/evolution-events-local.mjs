@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 const CRON_URL = 'http://127.0.0.1:3000/api/whatsapp/evolution/events/cron'
 const FLOW_CRON_URL = 'http://127.0.0.1:3000/api/whatsapp/evolution/flow/cron'
+const AUTOMATION_CRON_URL = 'http://127.0.0.1:3000/api/whatsapp/evolution/automation/cron'
 const REQUEST_TIMEOUT_MS = 45_000
 const CYCLE_INTERVAL_MS = 10_000
 const ENV_FILE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env.local')
@@ -37,10 +38,12 @@ async function runCycle(secret, url, engine) {
 
   try {
     const body = await response.json()
-    const counts = engine === 'events' ? body : body?.flow
+    const counts = engine === 'events' ? body : engine === 'flow' ? body?.flow : body?.automation
     const keys = engine === 'events'
       ? ['claimed', 'done', 'retry', 'failed', 'stale']
-      : ['claimed', 'done', 'skipped', 'waiting', 'unsupported', 'terminalNonSuccess', 'transitionLimit', 'errors']
+      : engine === 'flow'
+        ? ['claimed', 'done', 'skipped', 'waiting', 'unsupported', 'terminalNonSuccess', 'transitionLimit', 'errors']
+        : ['claimed', 'done', 'skipped', 'failed', 'unknown', 'waiting', 'processing', 'errors']
     if (counts && keys.every((key) => isCount(counts[key]))) {
       console.log(JSON.stringify({ engine, status: response.status,
         ...Object.fromEntries(keys.map((key) => [key, counts[key]])) }))
@@ -54,10 +57,11 @@ async function runCycle(secret, url, engine) {
   return false
 }
 
-async function runBoth(secret) {
+async function runAll(secret) {
   const eventsOk = await runCycle(secret, CRON_URL, 'events')
   const flowOk = await runCycle(secret, FLOW_CRON_URL, 'flow')
-  return eventsOk && flowOk
+  const automationOk = await runCycle(secret, AUTOMATION_CRON_URL, 'automation')
+  return eventsOk && flowOk && automationOk
 }
 
 async function main() {
@@ -83,13 +87,13 @@ async function main() {
   }
 
   if (args.includes('--once')) {
-    if (!(await runBoth(secret))) process.exitCode = 1
+    if (!(await runAll(secret))) process.exitCode = 1
     return
   }
 
   for (;;) {
     const cycleStartedAt = Date.now()
-    await runBoth(secret)
+    await runAll(secret)
     const delay = Math.max(0, CYCLE_INTERVAL_MS - (Date.now() - cycleStartedAt))
     await new Promise((resolveCycle) => setTimeout(resolveCycle, delay))
   }

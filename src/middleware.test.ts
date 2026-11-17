@@ -68,6 +68,7 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
   it.each([
     '/api/whatsapp/evolution/events/cron',
     '/api/whatsapp/evolution/flow/cron',
+    '/api/whatsapp/evolution/automation/cron',
   ])('lets the protected cron route verify its own bearer: %s', async (path) => {
     const res = await middleware(new NextRequest(`https://app.test${path}`));
     expect(res.status).toBe(200);
@@ -203,6 +204,8 @@ describe("middleware — Evolution events cron exception", () => {
     { method: "POST", path: "/api/whatsapp/evolution/events/cron" },
     { method: "GET", path: "/api/whatsapp/evolution/events/cron/child" },
     { method: "GET", path: "/api/whatsapp/evolution/events/cron-extra" },
+    { method: "POST", path: "/api/whatsapp/evolution/automation/cron" },
+    { method: "GET", path: "/api/whatsapp/evolution/automation/cron/child" },
   ])("keeps $method $path behind the existing auth guard", async ({ method, path }) => {
     mockUser = null;
 

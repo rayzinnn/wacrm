@@ -352,7 +352,7 @@ function cursorForCompletedWait(
   const { parent_step_id: parentStepId, branch, next_step_position } = cursor;
   if (
     !Number.isInteger(next_step_position) ||
-    next_step_position < 1 ||
+    next_step_position < 0 ||
     (parentStepId === null && branch !== null) ||
     (parentStepId !== null && branch === null)
   ) {
@@ -506,7 +506,7 @@ export async function executeEvolutionAutomationDispatch(
       cursor ?? {
         parent_step_id: null,
         branch: null,
-        next_step_position: 1,
+        next_step_position: 0,
       }
     );
   } catch (error) {

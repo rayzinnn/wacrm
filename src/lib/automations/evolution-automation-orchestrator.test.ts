@@ -166,6 +166,18 @@ beforeEach(() => {
 });
 
 describe('executeEvolutionAutomationDispatch', () => {
+  it('executes the first persisted root step when its position is zero', async () => {
+    h.steps = [step(ids[0]!, 'create_deal', 0)];
+    completed('done');
+
+    await expect(executeEvolutionAutomationDispatch(input)).resolves.toEqual({
+      state: 'done', dispatch_id: ROOT_ID,
+    });
+    expect(h.effect).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: ids[0], position: 0 }),
+    }));
+  });
+
   it('walks each scope by position, traverses only the selected branch, then resumes its parent', async () => {
     const [conditionId, yesLaterId, yesFirstId, noId, sendId] = ids;
     h.steps = [
