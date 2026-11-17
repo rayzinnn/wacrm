@@ -59,6 +59,20 @@ interface TransitionInput {
   endReason: string | null;
 }
 
+interface SetTagTransitionInput {
+  dispatchId: string;
+  dispatchLeaseToken: string;
+  stepId: string;
+  stepLeaseToken: string;
+  flowRunId: string;
+  eventId: string;
+  expectedTransitionSeq: number;
+  nodeKey: string;
+  mode: 'add' | 'remove';
+  tagId: string;
+  nextNodeKey: string;
+}
+
 export interface EvolutionFlowStore {
   loadRoot(dispatchId: string): Promise<DispatchRoot | null>;
   startRoot(dispatchId: string, leaseToken: string): Promise<string | null>;
@@ -67,14 +81,19 @@ export interface EvolutionFlowStore {
   evaluateCondition(
     root: DispatchRoot,
     run: FlowRun,
-    config: JsonObject,
+    config: JsonObject
   ): Promise<boolean>;
   claimStep(
     dispatchId: string,
     leaseToken: string,
-    actionKey: string,
+    actionKey: string
   ): Promise<StepClaim>;
   completeTransition(input: TransitionInput): Promise<{
+    applied: boolean;
+    transition_seq: number;
+    status: string;
+  }>;
+  completeSetTagTransition(input: SetTagTransitionInput): Promise<{
     applied: boolean;
     transition_seq: number;
     status: string;
@@ -83,14 +102,19 @@ export interface EvolutionFlowStore {
     dispatchId: string,
     leaseToken: string,
     state: 'done' | 'failed',
-    errorCode: string | null,
+    errorCode: string | null
   ): Promise<void>;
 }
 
 export type EvolutionFlowExecutionResult =
   | { status: 'done'; flowRunId: string; transitions: number }
   | { status: 'waiting'; flowRunId: string; nodeKey: string }
-  | { status: 'unsupported_node'; flowRunId: string; nodeKey: string; nodeType: string }
+  | {
+      status: 'unsupported_node';
+      flowRunId: string;
+      nodeKey: string;
+      nodeType: string;
+    }
   | { status: 'terminal_non_success'; flowRunId: string; runStatus: string }
   | { status: 'transition_limit'; flowRunId: string; transitions: number };
 
@@ -150,7 +174,7 @@ function parseTransition(value: unknown): {
 function compareCondition(
   operator: unknown,
   subject: string | undefined,
-  value: unknown,
+  value: unknown
 ): boolean {
   switch (operator) {
     case 'present':
@@ -158,21 +182,35 @@ function compareCondition(
     case 'absent':
       return subject === undefined || subject === '';
     case 'equals':
-      return subject !== undefined && subject === (typeof value === 'string' ? value : '');
+      return (
+        subject !== undefined &&
+        subject === (typeof value === 'string' ? value : '')
+      );
     case 'contains':
-      return subject !== undefined && subject.includes(typeof value === 'string' ? value : '');
+      return (
+        subject !== undefined &&
+        subject.includes(typeof value === 'string' ? value : '')
+      );
     default:
       throw new EvolutionFlowExecutionError('condition_operator_unsupported');
   }
 }
 
 function actionKey(run: FlowRun, nodeKey: string): string {
-  const value = `evolution-flow:${run.id}:${run.transition_seq}:${nodeKey}`;
-  if (value.length > 200) throw new EvolutionFlowExecutionError('action_key_invalid');
+  const value = `${run.transition_seq}:${nodeKey}`;
+  if (value.length > 200)
+    throw new EvolutionFlowExecutionError('action_key_invalid');
   return value;
 }
 
-const TERMINAL_STATUSES = new Set(['completed', 'handed_off', 'timed_out', 'paused_by_agent', 'cancelled', 'failed']);
+const TERMINAL_STATUSES = new Set([
+  'completed',
+  'handed_off',
+  'timed_out',
+  'paused_by_agent',
+  'cancelled',
+  'failed',
+]);
 const MAX_TRANSITIONS = 40;
 
 export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
@@ -185,7 +223,8 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
     if (root.engine !== 'flow' || !root.flow_id || !root.event_id)
       throw new EvolutionFlowExecutionError('root_lineage_invalid');
     if (root.state === 'done') {
-      if (!root.flow_run_id) throw new EvolutionFlowExecutionError('root_run_missing');
+      if (!root.flow_run_id)
+        throw new EvolutionFlowExecutionError('root_run_missing');
       const completedRun = await store.loadRun(root.flow_run_id);
       if (!completedRun || completedRun.status !== 'completed')
         throw new EvolutionFlowExecutionError('root_terminal_mismatch');
@@ -202,15 +241,29 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
 
     while (transitions < MAX_TRANSITIONS) {
       const run = await store.loadRun(flowRunId);
-      if (!run || run.flow_id !== root.flow_id || run.account_id !== root.account_id || run.contact_id !== root.contact_id)
+      if (
+        !run ||
+        run.flow_id !== root.flow_id ||
+        run.account_id !== root.account_id ||
+        run.contact_id !== root.contact_id
+      )
         throw new EvolutionFlowExecutionError('run_lineage_invalid');
       if (TERMINAL_STATUSES.has(run.status)) {
         if (run.status === 'completed') {
           await store.completeRoot(root.id, input.leaseToken, 'done', null);
           return { status: 'done', flowRunId, transitions };
         }
-        await store.completeRoot(root.id, input.leaseToken, 'failed', `flow_run_${run.status}`);
-        return { status: 'terminal_non_success', flowRunId, runStatus: run.status };
+        await store.completeRoot(
+          root.id,
+          input.leaseToken,
+          'failed',
+          `flow_run_${run.status}`
+        );
+        return {
+          status: 'terminal_non_success',
+          flowRunId,
+          runStatus: run.status,
+        };
       }
       if (run.status !== 'active' || !run.current_node_key)
         throw new EvolutionFlowExecutionError('run_state_invalid');
@@ -218,27 +271,65 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       const node = nodesByKey.get(run.current_node_key);
       if (!node || node.flow_id !== root.flow_id)
         throw new EvolutionFlowExecutionError('current_node_missing');
-      if (node.node_type !== 'start' && node.node_type !== 'condition' && node.node_type !== 'end') {
-        return { status: 'unsupported_node', flowRunId, nodeKey: node.node_key, nodeType: node.node_type };
+      if (
+        node.node_type !== 'start' &&
+        node.node_type !== 'condition' &&
+        node.node_type !== 'set_tag' &&
+        node.node_type !== 'end'
+      ) {
+        return {
+          status: 'unsupported_node',
+          flowRunId,
+          nodeKey: node.node_key,
+          nodeType: node.node_type,
+        };
       }
-      if (!isObject(node.config)) throw new EvolutionFlowExecutionError('node_config_invalid');
+      if (!isObject(node.config))
+        throw new EvolutionFlowExecutionError('node_config_invalid');
 
       let eventType: TransitionInput['eventType'];
       let payload: JsonObject = {};
       let nextNodeKey: string | null;
       let nextStatus: TransitionInput['nextStatus'] = 'active';
       let endReason: string | null = null;
+      let tagMode: 'add' | 'remove' | null = null;
+      let tagId: string | null = null;
 
       if (node.node_type === 'start') {
         eventType = 'started';
-        nextNodeKey = requiredString(node.config.next_node_key, 'start_target_invalid');
+        nextNodeKey = requiredString(
+          node.config.next_node_key,
+          'start_target_invalid'
+        );
       } else if (node.node_type === 'condition') {
         eventType = 'node_entered';
-        const branch = (await store.evaluateCondition(root, run, node.config)) ? 'yes' : 'no';
+        const branch = (await store.evaluateCondition(root, run, node.config))
+          ? 'yes'
+          : 'no';
         payload = { branch };
         nextNodeKey = requiredString(
           branch === 'yes' ? node.config.true_next : node.config.false_next,
-          'condition_target_invalid',
+          'condition_target_invalid'
+        );
+      } else if (node.node_type === 'set_tag') {
+        eventType = 'node_entered';
+        if (node.config.mode !== 'add' && node.config.mode !== 'remove')
+          throw new EvolutionFlowExecutionError('set_tag_mode_invalid');
+        const configuredTagId = requiredString(
+          node.config.tag_id,
+          'set_tag_id_invalid'
+        );
+        if (
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            configuredTagId
+          )
+        )
+          throw new EvolutionFlowExecutionError('set_tag_id_invalid');
+        tagMode = node.config.mode;
+        tagId = configuredTagId;
+        nextNodeKey = requiredString(
+          node.config.next_node_key,
+          'set_tag_target_invalid'
         );
       } else {
         eventType = 'completed';
@@ -250,7 +341,11 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (nextNodeKey !== null && !nodesByKey.has(nextNodeKey))
         throw new EvolutionFlowExecutionError('next_node_missing');
 
-      const claim = await store.claimStep(root.id, input.leaseToken, actionKey(run, node.node_key));
+      const claim = await store.claimStep(
+        root.id,
+        input.leaseToken,
+        actionKey(run, node.node_key)
+      );
       if (!claim.should_execute) {
         if (claim.state === 'done') {
           const refreshed = await store.loadRun(flowRunId);
@@ -261,10 +356,14 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         }
         return { status: 'waiting', flowRunId, nodeKey: node.node_key };
       }
-      if (claim.state !== 'processing' || !claim.lease_token || !claim.request_id)
+      if (
+        claim.state !== 'processing' ||
+        !claim.lease_token ||
+        !claim.request_id
+      )
         throw new EvolutionFlowExecutionError('step_claim_invalid');
 
-      const transition = await store.completeTransition({
+      const transitionInput = {
         dispatchId: root.id,
         dispatchLeaseToken: input.leaseToken,
         stepId: claim.step_id,
@@ -278,7 +377,26 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         nextNodeKey,
         nextStatus,
         endReason,
-      });
+      };
+      const transition =
+        tagMode && tagId
+          ? await store.completeSetTagTransition({
+              dispatchId: root.id,
+              dispatchLeaseToken: input.leaseToken,
+              stepId: claim.step_id,
+              stepLeaseToken: claim.lease_token,
+              flowRunId,
+              eventId: root.event_id,
+              expectedTransitionSeq: run.transition_seq,
+              nodeKey: node.node_key,
+              mode: tagMode,
+              tagId,
+              nextNodeKey: requiredString(
+                nextNodeKey,
+                'set_tag_target_invalid'
+              ),
+            })
+          : await store.completeTransition(transitionInput);
       if (transition.applied) {
         if (
           transition.transition_seq !== run.transition_seq + 1 ||
@@ -307,19 +425,23 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
 }
 
 function firstRow(data: unknown): unknown {
-  return Array.isArray(data) ? data[0] ?? null : data;
+  return Array.isArray(data) ? (data[0] ?? null) : data;
 }
 
 function throwOnError(error: { code?: string } | null, code: string): void {
   if (error) throw new EvolutionFlowExecutionError(code);
 }
 
-function createSupabaseStore(db: Pick<SupabaseClient, 'from' | 'rpc'>): EvolutionFlowStore {
+function createSupabaseStore(
+  db: Pick<SupabaseClient, 'from' | 'rpc'>
+): EvolutionFlowStore {
   return {
     async loadRoot(dispatchId) {
       const { data, error } = await db
         .from('evolution_event_dispatches')
-        .select('id,engine,state,lease_token,flow_id,flow_run_id,event_id,account_id,contact_id')
+        .select(
+          'id,engine,state,lease_token,flow_id,flow_run_id,event_id,account_id,contact_id'
+        )
         .eq('id', dispatchId)
         .maybeSingle();
       throwOnError(error, 'root_read_failed');
@@ -338,7 +460,9 @@ function createSupabaseStore(db: Pick<SupabaseClient, 'from' | 'rpc'>): Evolutio
     async loadRun(runId) {
       const { data, error } = await db
         .from('flow_runs')
-        .select('id,flow_id,account_id,contact_id,current_node_key,transition_seq,status,vars')
+        .select(
+          'id,flow_id,account_id,contact_id,current_node_key,transition_seq,status,vars'
+        )
         .eq('id', runId)
         .maybeSingle();
       throwOnError(error, 'run_read_failed');
@@ -354,14 +478,24 @@ function createSupabaseStore(db: Pick<SupabaseClient, 'from' | 'rpc'>): Evolutio
     },
     async evaluateCondition(root, run, config) {
       const subject = config.subject;
-      const subjectKey = requiredString(config.subject_key, 'condition_config_invalid');
+      const subjectKey = requiredString(
+        config.subject_key,
+        'condition_config_invalid'
+      );
       let value: string | undefined;
       if (subject === 'var') {
-        if (!isObject(run.vars)) throw new EvolutionFlowExecutionError('run_vars_invalid');
+        if (!isObject(run.vars))
+          throw new EvolutionFlowExecutionError('run_vars_invalid');
         const raw = run.vars[subjectKey];
-        value = raw === undefined || raw === null ? undefined : typeof raw === 'string' ? raw : String(raw);
+        value =
+          raw === undefined || raw === null
+            ? undefined
+            : typeof raw === 'string'
+              ? raw
+              : String(raw);
       } else if (subject === 'tag') {
-        if (!root.contact_id) throw new EvolutionFlowExecutionError('condition_contact_missing');
+        if (!root.contact_id)
+          throw new EvolutionFlowExecutionError('condition_contact_missing');
         const { count, error } = await db
           .from('contact_tags')
           .select('contact_id', { count: 'exact', head: true })
@@ -370,7 +504,8 @@ function createSupabaseStore(db: Pick<SupabaseClient, 'from' | 'rpc'>): Evolutio
         throwOnError(error, 'condition_read_failed');
         value = (count ?? 0) > 0 ? subjectKey : undefined;
       } else if (subject === 'contact_field') {
-        if (!root.contact_id) throw new EvolutionFlowExecutionError('condition_contact_missing');
+        if (!root.contact_id)
+          throw new EvolutionFlowExecutionError('condition_contact_missing');
         if (!['name', 'email', 'phone', 'company'].includes(subjectKey))
           throw new EvolutionFlowExecutionError('condition_field_unsupported');
         const { data, error } = await db
@@ -398,7 +533,29 @@ function createSupabaseStore(db: Pick<SupabaseClient, 'from' | 'rpc'>): Evolutio
       return parseClaim(data);
     },
     async completeTransition(input) {
-      const { data, error } = await db.rpc('complete_evolution_flow_transition', {
+      const { data, error } = await db.rpc(
+        'complete_evolution_flow_transition',
+        {
+          p_dispatch_id: input.dispatchId,
+          p_dispatch_lease_token: input.dispatchLeaseToken,
+          p_step_id: input.stepId,
+          p_step_lease_token: input.stepLeaseToken,
+          p_flow_run_id: input.flowRunId,
+          p_event_id: input.eventId,
+          p_expected_transition_seq: input.expectedTransitionSeq,
+          p_event_type: input.eventType,
+          p_node_key: input.nodeKey,
+          p_payload: input.payload,
+          p_next_node_key: input.nextNodeKey,
+          p_next_status: input.nextStatus,
+          p_end_reason: input.endReason,
+        }
+      );
+      throwOnError(error, 'transition_failed');
+      return parseTransition(data);
+    },
+    async completeSetTagTransition(input) {
+      const { data, error } = await db.rpc('complete_evolution_flow_set_tag', {
         p_dispatch_id: input.dispatchId,
         p_dispatch_lease_token: input.dispatchLeaseToken,
         p_step_id: input.stepId,
@@ -406,14 +563,12 @@ function createSupabaseStore(db: Pick<SupabaseClient, 'from' | 'rpc'>): Evolutio
         p_flow_run_id: input.flowRunId,
         p_event_id: input.eventId,
         p_expected_transition_seq: input.expectedTransitionSeq,
-        p_event_type: input.eventType,
         p_node_key: input.nodeKey,
-        p_payload: input.payload,
+        p_mode: input.mode,
+        p_tag_id: input.tagId,
         p_next_node_key: input.nextNodeKey,
-        p_next_status: input.nextStatus,
-        p_end_reason: input.endReason,
       });
-      throwOnError(error, 'transition_failed');
+      throwOnError(error, 'set_tag_transition_failed');
       return parseTransition(data);
     },
     async completeRoot(dispatchId, leaseToken, state, errorCode) {

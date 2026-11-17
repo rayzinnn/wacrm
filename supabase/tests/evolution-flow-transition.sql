@@ -56,6 +56,8 @@ DECLARE
   v_step_token_stale_root uuid := pg_catalog.gen_random_uuid();
   v_step_token_tenant uuid := pg_catalog.gen_random_uuid();
   v_send_attempt_id uuid := pg_catalog.gen_random_uuid();
+  v_tag_a uuid := pg_catalog.gen_random_uuid();
+  v_tag_b uuid := pg_catalog.gen_random_uuid();
 BEGIN
   INSERT INTO auth.users (id, aud, role, email, encrypted_password,
                           email_confirmed_at, raw_app_meta_data, raw_user_meta_data)
@@ -69,12 +71,27 @@ BEGIN
   SELECT p.account_id INTO STRICT v_account_a FROM public.profiles AS p WHERE p.user_id = v_user_a;
   SELECT p.account_id INTO STRICT v_account_b FROM public.profiles AS p WHERE p.user_id = v_user_b;
 
+  INSERT INTO public.tags (id, user_id, account_id, name)
+  VALUES
+    (v_tag_a, v_user_a, v_account_a, 'Synthetic Flow set_tag A'),
+    (v_tag_b, v_user_b, v_account_b, 'Synthetic Flow set_tag B');
+
   INSERT INTO public.flows (user_id, account_id, name, status, trigger_type, entry_node_id)
   VALUES (v_user_a, v_account_a, 'Synthetic transition flow A', 'active', 'manual', 'node_a')
   RETURNING id INTO v_flow_a;
   INSERT INTO public.flows (user_id, account_id, name, status, trigger_type, entry_node_id)
   VALUES (v_user_b, v_account_b, 'Synthetic transition flow B', 'active', 'manual', 'tenant_node')
   RETURNING id INTO v_flow_b;
+  INSERT INTO public.flow_nodes (flow_id, node_key, node_type, config)
+  VALUES
+    (v_flow_a, 'set_tag_fixture', 'set_tag', pg_catalog.jsonb_build_object(
+      'mode', 'add', 'tag_id', v_tag_a, 'next_node_key', 'set_tag_target'
+    )),
+    (v_flow_a, 'set_tag_target', 'end', '{}'::jsonb);
+  INSERT INTO public.flow_nodes (flow_id, node_key, node_type, config)
+  VALUES (v_flow_a, 'set_tag_cross_fixture', 'set_tag', pg_catalog.jsonb_build_object(
+    'mode', 'add', 'tag_id', v_tag_b, 'next_node_key', 'set_tag_target'
+  ));
 
   INSERT INTO public.flow_runs (flow_id, account_id, user_id, status, current_node_key, transition_seq)
   VALUES (v_flow_a, v_account_a, v_user_a, 'active', 'node_a', 0)
@@ -246,12 +263,15 @@ BEGIN
   PERFORM pg_catalog.set_config('wacrm.flowtransition.step_token_stale_root', v_step_token_stale_root::text, true);
   PERFORM pg_catalog.set_config('wacrm.flowtransition.step_token_tenant', v_step_token_tenant::text, true);
   PERFORM pg_catalog.set_config('wacrm.flowtransition.send_attempt', v_send_attempt_id::text, true);
+  PERFORM pg_catalog.set_config('wacrm.flowtransition.tag_a', v_tag_a::text, true);
+  PERFORM pg_catalog.set_config('wacrm.flowtransition.tag_b', v_tag_b::text, true);
 END;
 $fixture_setup$;
 
 DO $security_assertions$
 DECLARE
   v_function regprocedure := 'public.complete_evolution_flow_transition(uuid,uuid,uuid,uuid,uuid,uuid,integer,text,text,jsonb,text,text,text)'::regprocedure;
+  v_set_tag_function regprocedure := 'public.complete_evolution_flow_set_tag(uuid,uuid,uuid,uuid,uuid,uuid,integer,text,text,uuid,text)'::regprocedure;
 BEGIN
   IF EXISTS (
        SELECT 1 FROM pg_catalog.pg_proc AS p
@@ -261,6 +281,15 @@ BEGIN
        OR pg_catalog.has_function_privilege('authenticated', v_function, 'EXECUTE')
        OR NOT pg_catalog.has_function_privilege('service_role', v_function, 'EXECUTE') THEN
     RAISE EXCEPTION 'flow transition function security/grants mismatch';
+  END IF;
+  IF EXISTS (
+       SELECT 1 FROM pg_catalog.pg_proc AS p
+        WHERE p.oid = v_set_tag_function
+          AND (p.prosecdef OR NOT p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp'])
+     ) OR pg_catalog.has_function_privilege('anon', v_set_tag_function, 'EXECUTE')
+       OR pg_catalog.has_function_privilege('authenticated', v_set_tag_function, 'EXECUTE')
+       OR NOT pg_catalog.has_function_privilege('service_role', v_set_tag_function, 'EXECUTE') THEN
+    RAISE EXCEPTION 'flow set_tag function security/grants mismatch';
   END IF;
 END;
 $security_assertions$;
@@ -526,6 +555,75 @@ BEGIN
   END IF;
 END;
 $send_attempt_assertions$;
+
+DO $set_tag_assertions$
+DECLARE
+  v_run uuid := current_setting('wacrm.flowtransition.run_send')::uuid;
+  v_dispatch uuid := current_setting('wacrm.flowtransition.dispatch_send')::uuid;
+  v_event uuid := current_setting('wacrm.flowtransition.event_send')::uuid;
+  v_tag uuid := current_setting('wacrm.flowtransition.tag_a')::uuid;
+  v_tag_b uuid := current_setting('wacrm.flowtransition.tag_b')::uuid;
+  v_step uuid := pg_catalog.gen_random_uuid();
+  v_bad_step uuid := pg_catalog.gen_random_uuid();
+  v_root_token uuid := current_setting('wacrm.flowtransition.root_token_send')::uuid;
+  v_step_token uuid := pg_catalog.gen_random_uuid();
+  v_bad_step_token uuid := pg_catalog.gen_random_uuid();
+  v_result record;
+BEGIN
+  UPDATE public.flow_runs SET current_node_key = 'set_tag_cross_fixture'
+   WHERE id = v_run AND transition_seq = 1;
+  INSERT INTO public.evolution_dispatch_steps (
+    id, dispatch_id, action_key, state, attempts, lease_until,
+    lease_token, request_id, send_attempt_id
+  ) VALUES (
+    v_bad_step, v_dispatch, '1:set_tag_cross_fixture', 'processing', 1,
+    pg_catalog.clock_timestamp() + interval '5 minutes', v_bad_step_token,
+    'evolution-step:' || v_bad_step::text, NULL
+  );
+  BEGIN
+    PERFORM * FROM public.complete_evolution_flow_set_tag(
+      v_dispatch, v_root_token, v_bad_step, v_bad_step_token, v_run, v_event, 1,
+      'set_tag_cross_fixture', 'add', v_tag_b, 'set_tag_target'
+    );
+    RAISE EXCEPTION 'cross-account Flow tag was accepted';
+  EXCEPTION WHEN SQLSTATE '23514' THEN NULL;
+  END;
+  IF (SELECT r.transition_seq FROM public.flow_runs AS r WHERE r.id = v_run) <> 1
+     OR (SELECT s.state FROM public.evolution_dispatch_steps AS s WHERE s.id = v_bad_step) <> 'processing'
+     OR EXISTS (SELECT 1 FROM public.contact_tags AS ct WHERE ct.tag_id = v_tag_b) THEN
+    RAISE EXCEPTION 'cross-account tag attempt changed Flow state';
+  END IF;
+  UPDATE public.flow_runs SET current_node_key = 'set_tag_fixture'
+   WHERE id = v_run AND transition_seq = 1;
+  INSERT INTO public.evolution_dispatch_steps (
+    id, dispatch_id, action_key, state, attempts, lease_until,
+    lease_token, request_id, send_attempt_id
+  ) VALUES (
+    v_step, v_dispatch, '1:set_tag_fixture', 'processing', 1,
+    pg_catalog.clock_timestamp() + interval '5 minutes', v_step_token,
+    'evolution-step:' || v_step::text, NULL
+  );
+
+  SELECT * INTO STRICT v_result FROM public.complete_evolution_flow_set_tag(
+    v_dispatch, v_root_token, v_step, v_step_token, v_run, v_event, 1,
+    'set_tag_fixture', 'add', v_tag, 'set_tag_target'
+  );
+  IF NOT v_result.applied OR v_result.transition_seq <> 2 OR v_result.status <> 'active'
+     OR (SELECT r.current_node_key FROM public.flow_runs AS r WHERE r.id = v_run) <> 'set_tag_target'
+     OR (SELECT count(*) FROM public.contact_tags AS ct
+          WHERE ct.contact_id = (SELECT d.contact_id FROM public.evolution_event_dispatches AS d WHERE d.id = v_dispatch)
+            AND ct.tag_id = v_tag) <> 1
+     OR (SELECT s.state FROM public.evolution_dispatch_steps AS s WHERE s.id = v_step) <> 'done'
+     OR NOT EXISTS (
+       SELECT 1 FROM public.flow_run_events AS e
+        WHERE e.flow_run_id = v_run AND e.evolution_event_id = v_event
+          AND e.event_type = 'node_entered' AND e.node_key = 'set_tag_fixture'
+          AND e.transition_seq = 2 AND e.payload = '{}'::jsonb
+     ) THEN
+    RAISE EXCEPTION 'Flow set_tag effect and transition checkpoint were not atomic';
+  END IF;
+END;
+$set_tag_assertions$;
 
 DO $atomicity_assertion$
 DECLARE
