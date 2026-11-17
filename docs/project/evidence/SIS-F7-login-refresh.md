@@ -23,4 +23,8 @@ Após o typecheck, tentei reabrir o portal para uma passada rápida em `/signup`
 - `npm run typecheck`: passou (`tsc --noEmit`, exit 0).
 - Não há testes dedicados listados no recorte `(auth)`.
 - Sem teste de envio/autenticação, leitor de tela ou outros navegadores.
-- Sem commit.
+- Código e capturas integrados no commit `6f508aa`.
+
+## Conferência complementar da coordenação
+
+Após a entrega LUNA, o portal dedicado voltou a responder. Naveguei sem sessão por `/signup` e `/forgot-password`: as duas páginas renderizaram seus campos, botões e links no frame compartilhado. Em `/signup` a 1440 px, `documentElement.scrollWidth=1423` para `innerWidth=1440`, sem overflow horizontal. Nenhum formulário foi enviado. O navegador voltou para `/login` após essa conferência.
