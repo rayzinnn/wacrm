@@ -39,3 +39,7 @@ o layout em 1440 px no mesmo Chrome, sem inserir dados. Este complemento
 comprova o reflow em 320 px nos dois modos e a ordem de Tab no login escuro;
 **zoom real de 200%, anel de foco observado e Shift+Tab permanecem pendentes**.
 Não alterei o código do login.
+
+## Tentativa de fechamento em 17/11/2026
+
+O controlador do Chrome retornou `The browser access host is unavailable` antes de abrir a página. O zoom real de 200%, o anel de foco observado e Shift+Tab continuam **não verificados** nesta rodada. A revisão estática encontrou rótulos associados, `autocomplete` e estilos `focus-visible` nos campos, links e botão do login; isso não substitui a observação no navegador. Nenhuma alteração visual foi feita.

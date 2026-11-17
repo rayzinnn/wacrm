@@ -109,6 +109,7 @@ interface SetTagTransitionInput {
 export interface EvolutionFlowStore {
   loadRoot(dispatchId: string): Promise<DispatchRoot | null>;
   isEntryEligible(root: DispatchRoot): Promise<boolean>;
+  loadCollectInputPromptEventId(run: FlowRun): Promise<string | null>;
   startRoot(dispatchId: string, leaseToken: string): Promise<string | null>;
   loadRun(runId: string): Promise<FlowRun | null>;
   loadNodes(flowId: string): Promise<FlowNode[]>;
@@ -151,6 +152,11 @@ export interface EvolutionFlowStore {
     status: string;
   }>;
   completeSetTagTransition(input: SetTagTransitionInput): Promise<{
+    applied: boolean;
+    transition_seq: number;
+    status: string;
+  }>;
+  completeCollectInputReply(input: Omit<TransitionInput, 'eventType' | 'payload' | 'nextNodeKey' | 'nextStatus' | 'endReason'>): Promise<{
     applied: boolean;
     transition_seq: number;
     status: string;
@@ -318,7 +324,11 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (!root.flow_run_id)
         throw new EvolutionFlowExecutionError('root_run_missing');
       const completedRun = await store.loadRun(root.flow_run_id);
-      if (!completedRun || completedRun.status !== 'completed')
+      if (!completedRun)
+        throw new EvolutionFlowExecutionError('root_terminal_mismatch');
+      if (completedRun.status === 'active' && completedRun.current_node_key)
+        return { status: 'waiting', flowRunId: root.flow_run_id, nodeKey: completedRun.current_node_key };
+      if (completedRun.status !== 'completed')
         throw new EvolutionFlowExecutionError('root_terminal_mismatch');
       return { status: 'done', flowRunId: root.flow_run_id, transitions: 0 };
     }
@@ -365,6 +375,17 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (run.status !== 'active' || !run.current_node_key)
         throw new EvolutionFlowExecutionError('run_state_invalid');
 
+      if (!root.flow_run_id && transitions === 0 && run.transition_seq > 0) {
+        const activeNode = nodesByKey.get(run.current_node_key);
+        const promptEventId = activeNode?.node_type === 'collect_input'
+          ? await store.loadCollectInputPromptEventId(run)
+          : null;
+        if (!promptEventId || promptEventId === root.event_id) {
+          await store.completeRoot(root.id, input.leaseToken, 'skipped', null);
+          return { status: 'skipped' };
+        }
+      }
+
       const node = nodesByKey.get(run.current_node_key);
       if (!node || node.flow_id !== root.flow_id)
         throw new EvolutionFlowExecutionError('current_node_missing');
@@ -373,6 +394,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         node.node_type !== 'condition' &&
         node.node_type !== 'set_tag' &&
         node.node_type !== 'send_message' &&
+        node.node_type !== 'collect_input' &&
         node.node_type !== 'end'
       ) {
         return {
@@ -384,6 +406,48 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       }
       if (!isObject(node.config))
         throw new EvolutionFlowExecutionError('node_config_invalid');
+
+      const promptEventId = node.node_type === 'collect_input'
+        ? await store.loadCollectInputPromptEventId(run)
+        : null;
+      if (promptEventId) {
+        if (promptEventId === root.event_id) {
+          await store.completeRoot(root.id, input.leaseToken, 'done', null);
+          return { status: 'waiting', flowRunId, nodeKey: node.node_key };
+        }
+        const replyClaim = await store.claimStep(
+          root.id, input.leaseToken, actionKey(run, node.node_key)
+        );
+        if (!replyClaim.should_execute) {
+          if (replyClaim.state === 'done') {
+            const refreshed = await store.loadRun(flowRunId);
+            if (!refreshed || refreshed.transition_seq <= run.transition_seq)
+              throw new EvolutionFlowExecutionError('reply_checkpoint_inconsistent');
+            transitions += 1;
+            continue;
+          }
+          return { status: 'waiting', flowRunId, nodeKey: node.node_key };
+        }
+        if (replyClaim.state !== 'processing' || !replyClaim.lease_token || !replyClaim.request_id)
+          throw new EvolutionFlowExecutionError('reply_step_claim_invalid');
+        const replyTransition = await store.completeCollectInputReply({
+          dispatchId: root.id,
+          dispatchLeaseToken: input.leaseToken,
+          stepId: replyClaim.step_id,
+          stepLeaseToken: replyClaim.lease_token,
+          flowRunId,
+          eventId: root.event_id,
+          expectedTransitionSeq: run.transition_seq,
+          nodeKey: node.node_key,
+        });
+        if (replyTransition.applied &&
+            (replyTransition.transition_seq !== run.transition_seq + 1 || replyTransition.status !== 'active'))
+          throw new EvolutionFlowExecutionError('reply_transition_invalid');
+        if (!replyTransition.applied && replyTransition.transition_seq <= run.transition_seq)
+          throw new EvolutionFlowExecutionError('reply_checkpoint_inconsistent');
+        transitions += 1;
+        continue;
+      }
 
       let eventType: TransitionInput['eventType'];
       let payload: JsonObject = {};
@@ -436,6 +500,13 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
           node.config.next_node_key,
           'send_message_target_invalid'
         );
+      } else if (node.node_type === 'collect_input') {
+        requiredString(node.config.prompt_text, 'collect_input_prompt_invalid');
+        requiredString(node.config.var_key, 'collect_input_var_invalid');
+        requiredString(node.config.next_node_key, 'collect_input_target_invalid');
+        eventType = 'message_sent';
+        payload = { outcome: 'accepted' };
+        nextNodeKey = node.node_key;
       } else {
         eventType = 'completed';
         nextNodeKey = null;
@@ -446,7 +517,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (nextNodeKey !== null && !nodesByKey.has(nextNodeKey))
         throw new EvolutionFlowExecutionError('next_node_missing');
 
-      const isSendMessage = node.node_type === 'send_message';
+      const isSendMessage = node.node_type === 'send_message' || node.node_type === 'collect_input';
       const claim = isSendMessage
         ? await store.claimSendStep(
             root.id,
@@ -488,7 +559,10 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         );
 
       if (isSendMessage) {
-        const sendContext = await store.loadSendContext(root, run, node.config);
+        const sendContext = await store.loadSendContext(root, run,
+          node.node_type === 'collect_input'
+            ? { text: node.config.prompt_text }
+            : node.config);
         const sendInput: EvolutionTextSendInput = {
           ...sendContext,
           senderType: 'bot',
@@ -661,13 +735,39 @@ function createSupabaseStore(
         return false;
       const normalized = isObject(event) ? event.normalized_event : null;
       if (!isObject(normalized) || normalized.kind !== 'message' ||
-          normalized.contentType !== 'text' || typeof normalized.text !== 'string')
-        throw new EvolutionFlowExecutionError('entry_event_invalid');
+          normalized.contentType !== 'text' || typeof normalized.text !== 'string' ||
+          normalized.fromMe !== false || normalized.sentByApi !== false)
+        return false;
+      if (root.contact_id) {
+        const { data: activeRun, error: activeRunError } = await db
+          .from('flow_runs')
+          .select('id,flow_id,account_id,user_id,contact_id,conversation_id,current_node_key,transition_seq,status,vars')
+          .eq('account_id', root.account_id)
+          .eq('contact_id', root.contact_id)
+          .eq('status', 'active')
+          .maybeSingle();
+        throwOnError(activeRunError, 'active_run_read_failed');
+        if (activeRun) {
+          const run = activeRun as FlowRun;
+          if (run.flow_id !== root.flow_id || run.conversation_id !== root.conversation_id ||
+              run.user_id !== root.user_id || !run.current_node_key)
+            return false;
+          const { data: node, error: nodeError } = await db
+            .from('flow_nodes')
+            .select('node_type')
+            .eq('flow_id', run.flow_id)
+            .eq('node_key', run.current_node_key)
+            .maybeSingle();
+          throwOnError(nodeError, 'active_node_read_failed');
+          if (node?.node_type !== 'collect_input') return false;
+          const promptEventId = await this.loadCollectInputPromptEventId(run);
+          return promptEventId !== null && promptEventId !== root.event_id;
+        }
+      }
 
       let isFirstInbound = false;
       if (flow.trigger_type === 'first_inbound_message') {
-        if (!root.contact_id || typeof normalized.externalMessageId !== 'string' ||
-            typeof normalized.occurredAt !== 'string')
+        if (!root.contact_id || typeof normalized.externalMessageId !== 'string')
           throw new EvolutionFlowExecutionError('entry_event_invalid');
         const { data: conversations, error: conversationsError } = await db
           .from('conversations')
@@ -682,8 +782,9 @@ function createSupabaseStore(
           .select('message_id')
           .in('conversation_id', conversationIds)
           .eq('sender_type', 'customer')
-          .lte('created_at', normalized.occurredAt)
-          .limit(2);
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(1);
         throwOnError(inboundError, 'inbound_history_read_failed');
         isFirstInbound = inbound?.length === 1 &&
           inbound[0].message_id === normalized.externalMessageId;
@@ -691,6 +792,19 @@ function createSupabaseStore(
       return matchesEvolutionFlowTrigger(
         String(flow.trigger_type), flow.trigger_config, normalized.text, isFirstInbound
       );
+    },
+    async loadCollectInputPromptEventId(run) {
+      if (!run.current_node_key) return null;
+      const { data, error } = await db
+        .from('flow_run_events')
+        .select('evolution_event_id')
+        .eq('flow_run_id', run.id)
+        .eq('event_type', 'message_sent')
+        .eq('node_key', run.current_node_key)
+        .eq('transition_seq', run.transition_seq)
+        .maybeSingle();
+      throwOnError(error, 'prompt_checkpoint_read_failed');
+      return typeof data?.evolution_event_id === 'string' ? data.evolution_event_id : null;
     },
     async startRoot(dispatchId, leaseToken) {
       const { data, error } = await db.rpc('start_evolution_event_dispatch', {
@@ -959,6 +1073,23 @@ function createSupabaseStore(
         p_next_node_key: input.nextNodeKey,
       });
       throwOnError(error, 'set_tag_transition_failed');
+      return parseTransition(data);
+    },
+    async completeCollectInputReply(input) {
+      const { data, error } = await db.rpc(
+        'complete_evolution_flow_collect_input_reply',
+        {
+          p_dispatch_id: input.dispatchId,
+          p_dispatch_lease_token: input.dispatchLeaseToken,
+          p_step_id: input.stepId,
+          p_step_lease_token: input.stepLeaseToken,
+          p_flow_run_id: input.flowRunId,
+          p_event_id: input.eventId,
+          p_expected_transition_seq: input.expectedTransitionSeq,
+          p_node_key: input.nodeKey,
+        }
+      );
+      throwOnError(error, 'collect_input_reply_failed');
       return parseTransition(data);
     },
     async completeRoot(dispatchId, leaseToken, state, errorCode) {

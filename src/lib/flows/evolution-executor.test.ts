@@ -24,6 +24,7 @@ function harness(
   vars: unknown = {}
 ) {
   const state = {
+    promptEventId: null as string | null,
     run: {
       id: 'run-1',
       flow_id: 'flow-1',
@@ -41,6 +42,7 @@ function harness(
   const store: EvolutionFlowStore = {
     loadRoot: vi.fn(async () => ROOT),
     isEntryEligible: vi.fn(async () => true),
+    loadCollectInputPromptEventId: vi.fn(async () => state.promptEventId),
     startRoot: vi.fn(async () => 'run-1'),
     loadRun: vi.fn(async () => ({ ...state.run })),
     loadNodes: vi.fn(async () => state.nodes),
@@ -97,11 +99,14 @@ function harness(
       expect(input.dispatchId).toBe(ROOT.id);
       expect(input.dispatchLeaseToken).toBe(ROOT.lease_token);
       expect(input.flowRunId).toBe('run-1');
-      expect(input.eventId).toBe('event-1');
+      expect(input.eventId).toMatch(/^event-[12]$/);
       expect(input.expectedTransitionSeq).toBe(state.run.transition_seq);
       state.run.transition_seq += 1;
       state.run.current_node_key = input.nextNodeKey;
       state.run.status = input.nextStatus;
+      if (input.eventType === 'message_sent' &&
+          state.nodes.some((node) => node.node_key === input.nodeKey && node.node_type === 'collect_input'))
+        state.promptEventId = input.eventId;
       return {
         applied: true,
         transition_seq: state.run.transition_seq,
@@ -118,6 +123,15 @@ function harness(
         transition_seq: state.run.transition_seq,
         status: 'active',
       };
+    }),
+    completeCollectInputReply: vi.fn(async (input) => {
+      const node = state.nodes.find((candidate) => candidate.node_key === input.nodeKey);
+      const config = node?.config as { var_key: string; next_node_key: string };
+      state.run.vars = { ...(state.run.vars as Record<string, unknown>), [config.var_key]: 'Ray' };
+      state.run.current_node_key = config.next_node_key;
+      state.run.transition_seq += 1;
+      state.promptEventId = null;
+      return { applied: true, transition_seq: state.run.transition_seq, status: 'active' };
     }),
     completeRoot: vi.fn(async () => undefined),
   };
@@ -195,7 +209,7 @@ describe('Evolution Flow isolated executor', () => {
     const h = harness([
       {
         node_key: 'send',
-        node_type: 'collect_input',
+        node_type: 'send_buttons',
         config: {},
       },
     ]);
@@ -209,11 +223,61 @@ describe('Evolution Flow isolated executor', () => {
       status: 'unsupported_node',
       flowRunId: 'run-1',
       nodeKey: 'send',
-      nodeType: 'collect_input',
+      nodeType: 'send_buttons',
     });
     expect(h.store.claimStep).not.toHaveBeenCalled();
     expect(h.store.completeTransition).not.toHaveBeenCalled();
     expect(h.store.completeRoot).not.toHaveBeenCalled();
+  });
+
+  it('sends a collect_input prompt once, then captures a later reply and continues', async () => {
+    const h = harness([
+      {
+        node_key: 'ask_name',
+        node_type: 'collect_input',
+        config: { prompt_text: 'Your name?', var_key: 'name', next_node_key: 'finish' },
+      },
+      { node_key: 'finish', node_type: 'end', config: {} },
+    ]);
+    vi.mocked(h.store.loadRoot).mockResolvedValueOnce({ ...ROOT, flow_run_id: null });
+
+    const first = await h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! });
+    expect(first).toEqual({ status: 'waiting', flowRunId: 'run-1', nodeKey: 'ask_name' });
+    expect(h.store.sendText).toHaveBeenCalledTimes(1);
+    expect(h.store.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Your name?' })
+    );
+    expect(h.store.completeTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'message_sent', nodeKey: 'ask_name',
+        nextNodeKey: 'ask_name', expectedTransitionSeq: 0,
+      })
+    );
+    expect(h.store.completeRoot).toHaveBeenCalledWith(ROOT.id, ROOT.lease_token, 'done', null);
+
+    vi.mocked(h.store.loadRoot).mockResolvedValueOnce({ ...ROOT, event_id: 'event-2', flow_run_id: null });
+    const second = await h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! });
+    expect(second).toEqual({ status: 'done', flowRunId: 'run-1', transitions: 2 });
+    expect(h.store.sendText).toHaveBeenCalledTimes(1);
+    expect(h.store.completeCollectInputReply).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: 'event-2', nodeKey: 'ask_name', expectedTransitionSeq: 1 })
+    );
+    expect(h.state.run.vars).toEqual({ name: 'Ray' });
+  });
+
+  it('does not treat the prompt-triggering event as the collect_input reply', async () => {
+    const h = harness([
+      { node_key: 'ask', node_type: 'collect_input',
+        config: { prompt_text: 'Reply?', var_key: 'reply', next_node_key: 'finish' } },
+      { node_key: 'finish', node_type: 'end', config: {} },
+    ]);
+    h.state.promptEventId = ROOT.event_id;
+    h.state.run.transition_seq = 1;
+
+    await expect(h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! }))
+      .resolves.toEqual({ status: 'waiting', flowRunId: 'run-1', nodeKey: 'ask' });
+    expect(h.store.sendText).not.toHaveBeenCalled();
+    expect(h.store.completeCollectInputReply).not.toHaveBeenCalled();
   });
 
   it('sends once and advances only after a known accepted attempt', async () => {
