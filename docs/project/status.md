@@ -162,6 +162,7 @@ Backup dos planos: `/tmp/wacrm-t01a-backup.Igl0X9`.
 | T14 — checks após espera T12 | Concluídos neste marco local | `evidence/T14.local-checks-after-wait.md`: 185 arquivos/2.022 testes, typecheck/lint/build exit 0; 33 warnings sem erros. CRM e Evolution HTTP 200. Não conclui T14 da migração inteira. |
 | T14 — checks após condição/Flow T12 | Concluídos neste marco local | `evidence/T14.local-checks-after-flow-condition.md`: 189 arquivos/2.053 testes, typecheck/lint/build exit 0; zero erros/33 avisos conhecidos. CRM e Evolution HTTP 200. Ainda faltam motores e QA de mídia/visual. |
 | T14 — checks após executores isolados | Concluídos neste marco local | 1154715, `evidence/T14.local-checks-after-isolated-executors.md`: 196 arquivos/2.118 testes, typecheck/lint/build passaram; lint sem erros e 33 avisos conhecidos. CRM e Evolution HTTP 200. Ainda faltam integração dos motores e QA de mídia/visual. |
+| T14 — checks após lote Flow | Concluídos neste marco local | `evidence/T14.local-checks-after-flow-batch.md`: 197 arquivos/2.138 testes, typecheck/lint/build passaram; lint sem erros e 33 avisos conhecidos. Login e Evolution HTTP 200. Motores ainda sem scheduler; mídia real e QA visual complementar pendentes. |
 | T05/T06 restantes, T08–T14 | Pendentes | Eventos, tentativas, envio, mídia, motores e retirada completa do runtime Meta. Sem credenciais Meta configuradas. |
 | T15–T16 | Fora desta execução | Sem staging, produção, publicação ou piloto externo nesta solicitação. |
 
