@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { matchesEvolutionFlowTrigger } from '@/lib/flows/evolution-trigger';
+import { buildEvolutionInteractiveMessage } from '@/lib/flows/evolution-interactive-config';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import {
   assertAllowedEvolutionOrigin,
@@ -15,6 +16,12 @@ import {
   type EvolutionTextSendResult,
 } from '@/lib/whatsapp/evolution/send-adapter';
 import type { EvolutionCredentials } from '@/lib/whatsapp/evolution/types';
+import {
+  createEvolutionInteractiveReservationAdapter,
+  createEvolutionInteractiveSendAdapter,
+  type EvolutionInteractiveSendInput,
+  type EvolutionInteractiveSendResult,
+} from '@/lib/whatsapp/evolution/interactive-send-adapter';
 
 type JsonObject = Record<string, unknown>;
 
@@ -109,7 +116,7 @@ interface SetTagTransitionInput {
 export interface EvolutionFlowStore {
   loadRoot(dispatchId: string): Promise<DispatchRoot | null>;
   isEntryEligible(root: DispatchRoot): Promise<boolean>;
-  loadCollectInputPromptEventId(run: FlowRun): Promise<string | null>;
+  loadPromptEventId(run: FlowRun): Promise<string | null>;
   startRoot(dispatchId: string, leaseToken: string): Promise<string | null>;
   loadRun(runId: string): Promise<FlowRun | null>;
   loadNodes(flowId: string): Promise<FlowNode[]>;
@@ -137,6 +144,8 @@ export interface EvolutionFlowStore {
   reconcileSend(
     input: EvolutionTextSendInput
   ): Promise<EvolutionTextReservationResult>;
+  sendInteractive(input: EvolutionInteractiveSendInput): Promise<EvolutionInteractiveSendResult>;
+  reconcileInteractiveSend(input: EvolutionInteractiveSendInput): Promise<EvolutionTextReservationResult>;
   linkSendAttempt(input: {
     stepId: string;
     dispatchLeaseToken: string;
@@ -165,6 +174,18 @@ export interface EvolutionFlowStore {
     applied: boolean;
     transition_seq: number;
     status: string;
+  }>;
+  completeInteractivePrompt(input: Omit<TransitionInput, 'eventType' | 'payload' | 'nextNodeKey' | 'nextStatus' | 'endReason'>): Promise<{
+    applied: boolean;
+    transition_seq: number;
+    status: string;
+    prompt_message_id: string;
+  }>;
+  completeInteractiveReply(input: Omit<TransitionInput, 'eventType' | 'payload' | 'nextNodeKey' | 'nextStatus' | 'endReason'>): Promise<{
+    applied: boolean;
+    transition_seq: number;
+    status: string;
+    next_node_key: string;
   }>;
   completeRoot(
     dispatchId: string,
@@ -257,6 +278,17 @@ function parseTransition(value: unknown): {
   };
 }
 
+function parseInteractiveTransition(
+  value: unknown,
+  field: 'prompt_message_id' | 'next_node_key'
+) {
+  const transition = parseTransition(value);
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!isObject(row) || typeof row[field] !== 'string' || row[field].trim() === '')
+    throw new EvolutionFlowExecutionError('interactive_transition_response_invalid');
+  return { ...transition, [field]: row[field] };
+}
+
 function compareCondition(
   operator: unknown,
   subject: string | undefined,
@@ -304,6 +336,10 @@ function sendTextFromConfig(config: JsonObject, vars: unknown): string {
   if (text.trim() === '')
     throw new EvolutionFlowExecutionError('send_message_text_invalid');
   return text;
+}
+
+function isInteractiveNode(nodeType: string): nodeType is 'send_buttons' | 'send_list' {
+  return nodeType === 'send_buttons' || nodeType === 'send_list';
 }
 
 const TERMINAL_STATUSES = new Set([
@@ -383,7 +419,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (!root.flow_run_id && transitions === 0 && run.transition_seq > 0) {
         const activeNode = nodesByKey.get(run.current_node_key);
         const promptEventId = activeNode?.node_type === 'collect_input'
-          ? await store.loadCollectInputPromptEventId(run)
+          ? await store.loadPromptEventId(run)
           : null;
         if (!promptEventId || promptEventId === root.event_id) {
           await store.completeRoot(root.id, input.leaseToken, 'skipped', null);
@@ -400,6 +436,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         node.node_type !== 'set_tag' &&
         node.node_type !== 'send_message' &&
         node.node_type !== 'collect_input' &&
+        !isInteractiveNode(node.node_type) &&
         node.node_type !== 'handoff' &&
         node.node_type !== 'end'
       ) {
@@ -413,8 +450,8 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (!isObject(node.config))
         throw new EvolutionFlowExecutionError('node_config_invalid');
 
-      const promptEventId = node.node_type === 'collect_input'
-        ? await store.loadCollectInputPromptEventId(run)
+      const promptEventId = node.node_type === 'collect_input' || isInteractiveNode(node.node_type)
+        ? await store.loadPromptEventId(run)
         : null;
       if (promptEventId) {
         if (promptEventId === root.event_id) {
@@ -436,7 +473,7 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         }
         if (replyClaim.state !== 'processing' || !replyClaim.lease_token || !replyClaim.request_id)
           throw new EvolutionFlowExecutionError('reply_step_claim_invalid');
-        const replyTransition = await store.completeCollectInputReply({
+        const replyInput = {
           dispatchId: root.id,
           dispatchLeaseToken: input.leaseToken,
           stepId: replyClaim.step_id,
@@ -445,12 +482,19 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
           eventId: root.event_id,
           expectedTransitionSeq: run.transition_seq,
           nodeKey: node.node_key,
-        });
+        };
+        const replyTransition = isInteractiveNode(node.node_type)
+          ? await store.completeInteractiveReply(replyInput)
+          : await store.completeCollectInputReply(replyInput);
         if (replyTransition.applied &&
             (replyTransition.transition_seq !== run.transition_seq + 1 || replyTransition.status !== 'active'))
           throw new EvolutionFlowExecutionError('reply_transition_invalid');
         if (!replyTransition.applied && replyTransition.transition_seq <= run.transition_seq)
           throw new EvolutionFlowExecutionError('reply_checkpoint_inconsistent');
+        if ('next_node_key' in replyTransition &&
+            (typeof replyTransition.next_node_key !== 'string' ||
+              !nodesByKey.has(replyTransition.next_node_key)))
+          throw new EvolutionFlowExecutionError('reply_target_missing');
         transitions += 1;
         continue;
       }
@@ -513,6 +557,9 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
         eventType = 'message_sent';
         payload = { outcome: 'accepted' };
         nextNodeKey = node.node_key;
+      } else if (isInteractiveNode(node.node_type)) {
+        eventType = 'message_sent';
+        nextNodeKey = node.node_key;
       } else if (node.node_type === 'handoff') {
         eventType = 'handoff';
         nextNodeKey = node.node_key;
@@ -528,7 +575,8 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
       if (nextNodeKey !== null && !nodesByKey.has(nextNodeKey))
         throw new EvolutionFlowExecutionError('next_node_missing');
 
-      const isSendMessage = node.node_type === 'send_message' || node.node_type === 'collect_input';
+      const isSendMessage = node.node_type === 'send_message' ||
+        node.node_type === 'collect_input' || isInteractiveNode(node.node_type);
       const claim = isSendMessage
         ? await store.claimSendStep(
             root.id,
@@ -574,24 +622,39 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
           node.node_type === 'collect_input'
             ? { text: node.config.prompt_text }
             : node.config);
-        const sendInput: EvolutionTextSendInput = {
+        const textSendInput: EvolutionTextSendInput = {
           ...sendContext,
           senderType: 'bot',
           senderId: sendContext.senderId,
           requestId: claim.request_id,
         };
+        const interactiveSendInput: EvolutionInteractiveSendInput | null =
+          isInteractiveNode(node.node_type) ? {
+            connectionId: sendContext.connectionId,
+            conversationId: sendContext.conversationId,
+            senderId: sendContext.senderId,
+            credentials: sendContext.credentials,
+            message: buildEvolutionInteractiveMessage(
+              node.node_type, node.config, run.vars,
+              sendContext.recipient, claim.request_id
+            ),
+          } : null;
         let attemptId: string;
         let outcome: 'pending' | 'accepted' | 'rejected' | 'unknown';
 
         if (claim.should_execute) {
-          const sent = await store.sendText(sendInput);
+          const sent = interactiveSendInput
+            ? await store.sendInteractive(interactiveSendInput)
+            : await store.sendText(textSendInput);
           if (!sent.shouldSend || !sent.attemptId) {
             throw new EvolutionFlowExecutionError('send_reservation_invalid');
           }
           attemptId = sent.attemptId;
           outcome = sent.outcome;
         } else {
-          const replay = await store.reconcileSend(sendInput);
+          const replay = interactiveSendInput
+            ? await store.reconcileInteractiveSend(interactiveSendInput)
+            : await store.reconcileSend(textSendInput);
           if (
             replay.attemptId !== claim.send_attempt_id ||
             replay.shouldSend
@@ -685,6 +748,17 @@ export function createEvolutionFlowExecutor(store: EvolutionFlowStore) {
                 expectedTransitionSeq: run.transition_seq,
                 nodeKey: node.node_key,
               })
+          : isInteractiveNode(node.node_type)
+            ? await store.completeInteractivePrompt({
+                dispatchId: root.id,
+                dispatchLeaseToken: input.leaseToken,
+                stepId: claim.step_id,
+                stepLeaseToken: claim.lease_token,
+                flowRunId,
+                eventId: root.event_id,
+                expectedTransitionSeq: run.transition_seq,
+                nodeKey: node.node_key,
+              })
           : await store.completeTransition(transitionInput);
       if (transition.applied) {
         if (
@@ -726,6 +800,8 @@ function createSupabaseStore(
 ): EvolutionFlowStore {
   const sendText = createEvolutionSendAdapter(db);
   const reconcileSend = createEvolutionSendReservationAdapter(db);
+  const sendInteractive = createEvolutionInteractiveSendAdapter(db);
+  const reconcileInteractiveSend = createEvolutionInteractiveReservationAdapter(db);
   return {
     async loadRoot(dispatchId) {
       const { data, error } = await db
@@ -782,7 +858,7 @@ function createSupabaseStore(
             .maybeSingle();
           throwOnError(nodeError, 'active_node_read_failed');
           if (node?.node_type !== 'collect_input') return false;
-          const promptEventId = await this.loadCollectInputPromptEventId(run);
+          const promptEventId = await this.loadPromptEventId(run);
           return promptEventId !== null && promptEventId !== root.event_id;
         }
       }
@@ -815,7 +891,7 @@ function createSupabaseStore(
         String(flow.trigger_type), flow.trigger_config, normalized.text, isFirstInbound
       );
     },
-    async loadCollectInputPromptEventId(run) {
+    async loadPromptEventId(run) {
       if (!run.current_node_key) return null;
       const { data, error } = await db
         .from('flow_run_events')
@@ -951,7 +1027,8 @@ function createSupabaseStore(
       if (
         !normalized ||
         normalized.kind !== 'message' ||
-        normalized.contentType !== 'text' ||
+        (normalized.contentType !== 'text' &&
+          !(normalized.contentType === 'interactive' && root.flow_run_id)) ||
         normalized.fromMe !== false ||
         normalized.sentByApi !== false ||
         typeof normalized.peer !== 'string' ||
@@ -1034,6 +1111,8 @@ function createSupabaseStore(
     },
     sendText,
     reconcileSend,
+    sendInteractive,
+    reconcileInteractiveSend,
     async linkSendAttempt(input) {
       const { data, error } = await db.rpc(
         'complete_evolution_dispatch_step',
@@ -1127,6 +1206,34 @@ function createSupabaseStore(
       });
       throwOnError(error, 'handoff_transition_failed');
       return parseTransition(data);
+    },
+    async completeInteractivePrompt(input) {
+      const { data, error } = await db.rpc('complete_evolution_flow_interactive_prompt', {
+        p_dispatch_id: input.dispatchId,
+        p_dispatch_lease_token: input.dispatchLeaseToken,
+        p_step_id: input.stepId,
+        p_step_lease_token: input.stepLeaseToken,
+        p_flow_run_id: input.flowRunId,
+        p_event_id: input.eventId,
+        p_expected_transition_seq: input.expectedTransitionSeq,
+        p_node_key: input.nodeKey,
+      });
+      throwOnError(error, 'interactive_prompt_transition_failed');
+      return parseInteractiveTransition(data, 'prompt_message_id') as Awaited<ReturnType<EvolutionFlowStore['completeInteractivePrompt']>>;
+    },
+    async completeInteractiveReply(input) {
+      const { data, error } = await db.rpc('complete_evolution_flow_interactive_reply', {
+        p_dispatch_id: input.dispatchId,
+        p_dispatch_lease_token: input.dispatchLeaseToken,
+        p_step_id: input.stepId,
+        p_step_lease_token: input.stepLeaseToken,
+        p_flow_run_id: input.flowRunId,
+        p_event_id: input.eventId,
+        p_expected_transition_seq: input.expectedTransitionSeq,
+        p_node_key: input.nodeKey,
+      });
+      throwOnError(error, 'interactive_reply_transition_failed');
+      return parseInteractiveTransition(data, 'next_node_key') as Awaited<ReturnType<EvolutionFlowStore['completeInteractiveReply']>>;
     },
     async completeRoot(dispatchId, leaseToken, state, errorCode) {
       const { error } = await db.rpc('complete_evolution_dispatch', {

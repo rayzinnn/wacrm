@@ -42,7 +42,7 @@ function harness(
   const store: EvolutionFlowStore = {
     loadRoot: vi.fn(async () => ROOT),
     isEntryEligible: vi.fn(async () => true),
-    loadCollectInputPromptEventId: vi.fn(async () => state.promptEventId),
+    loadPromptEventId: vi.fn(async () => state.promptEventId),
     startRoot: vi.fn(async () => 'run-1'),
     loadRun: vi.fn(async () => ({ ...state.run })),
     loadNodes: vi.fn(async () => state.nodes),
@@ -94,6 +94,15 @@ function harness(
       outcome: 'accepted' as const,
       shouldSend: false,
     })),
+    sendInteractive: vi.fn(async () => ({
+      attemptId: 'attempt-1', messageRowId: 'message-row-1',
+      outcome: 'accepted' as const, shouldSend: true,
+      externalMessageId: 'external-1', persistenceUncertain: false,
+    })),
+    reconcileInteractiveSend: vi.fn(async () => ({
+      attemptId: 'attempt-1', messageRowId: 'message-row-1',
+      outcome: 'accepted' as const, shouldSend: false,
+    })),
     linkSendAttempt: vi.fn(async () => undefined),
     completeTransition: vi.fn(async (input) => {
       expect(input.dispatchId).toBe(ROOT.id);
@@ -137,6 +146,19 @@ function harness(
       state.run.transition_seq += 1;
       state.run.status = 'handed_off';
       return { applied: true, transition_seq: state.run.transition_seq, status: 'handed_off' };
+    }),
+    completeInteractivePrompt: vi.fn(async (input) => {
+      state.run.transition_seq += 1;
+      state.promptEventId = input.eventId;
+      return { applied: true, transition_seq: state.run.transition_seq,
+        status: 'active', prompt_message_id: 'message-row-1' };
+    }),
+    completeInteractiveReply: vi.fn(async () => {
+      state.run.transition_seq += 1;
+      state.run.current_node_key = 'end';
+      state.promptEventId = null;
+      return { applied: true, transition_seq: state.run.transition_seq,
+        status: 'active', next_node_key: 'end' };
     }),
     completeRoot: vi.fn(async () => undefined),
   };
@@ -214,7 +236,7 @@ describe('Evolution Flow isolated executor', () => {
     const h = harness([
       {
         node_key: 'send',
-        node_type: 'send_buttons',
+        node_type: 'send_media',
         config: {},
       },
     ]);
@@ -228,7 +250,7 @@ describe('Evolution Flow isolated executor', () => {
       status: 'unsupported_node',
       flowRunId: 'run-1',
       nodeKey: 'send',
-      nodeType: 'send_buttons',
+      nodeType: 'send_media',
     });
     expect(h.store.claimStep).not.toHaveBeenCalled();
     expect(h.store.completeTransition).not.toHaveBeenCalled();
@@ -301,6 +323,50 @@ describe('Evolution Flow isolated executor', () => {
     );
     expect(h.store.completeTransition).not.toHaveBeenCalled();
     expect(h.store.completeRoot).toHaveBeenCalledWith(ROOT.id, ROOT.lease_token, 'done', null);
+  });
+
+  it('sends a button prompt once and waits on the same Flow node', async () => {
+    const h = harness([
+      { node_key: 'choose', node_type: 'send_buttons', config: {
+        text: 'Escolha', buttons: [{ reply_id: 'yes', title: 'Sim', next_node_key: 'end' }],
+      } },
+      { node_key: 'end', node_type: 'end', config: {} },
+    ]);
+
+    await expect(h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! }))
+      .resolves.toEqual({ status: 'waiting', flowRunId: 'run-1', nodeKey: 'choose' });
+    expect(h.store.sendInteractive).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.objectContaining({
+        kind: 'buttons', requestId: 'evolution-step:send-step-0',
+        buttons: [{ id: 'yes', displayText: 'Sim' }],
+      }),
+    }));
+    expect(h.store.completeInteractivePrompt).toHaveBeenCalledTimes(1);
+    expect(h.store.completeTransition).not.toHaveBeenCalled();
+    expect(h.store.completeRoot).toHaveBeenCalledWith(ROOT.id, ROOT.lease_token, 'done', null);
+  });
+
+  it('uses an interactive reply root to advance from the prompt without resending', async () => {
+    const h = harness([
+      { node_key: 'choose', node_type: 'send_list', config: {
+        text: 'Escolha', button_label: 'Abrir',
+        sections: [{ title: 'Opções', rows: [{ reply_id: 'one', title: 'Um', next_node_key: 'end' }] }],
+      } },
+      { node_key: 'end', node_type: 'end', config: {} },
+    ]);
+    h.state.promptEventId = 'event-1';
+    h.state.run.transition_seq = 1;
+    vi.mocked(h.store.loadRoot).mockResolvedValue({ ...ROOT, event_id: 'event-2' });
+
+    await expect(h.execute({ dispatchId: ROOT.id, leaseToken: ROOT.lease_token! }))
+      .resolves.toEqual({ status: 'done', flowRunId: 'run-1', transitions: 2 });
+    expect(h.store.completeInteractiveReply).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'event-2', nodeKey: 'choose', expectedTransitionSeq: 1,
+    }));
+    expect(h.store.sendInteractive).not.toHaveBeenCalled();
+    expect(h.store.completeTransition).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: 'event-2', nodeKey: 'end', eventType: 'completed',
+    }));
   });
 
   it('sends once and advances only after a known accepted attempt', async () => {
