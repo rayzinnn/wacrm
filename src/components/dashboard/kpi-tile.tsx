@@ -69,11 +69,11 @@ export function KpiTile({
       )}
     >
       {featured ? <span className="absolute inset-y-0 left-0 w-1 bg-primary" aria-hidden /> : null}
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <span className="truncate">{title}</span>
+      <div className="flex items-start gap-1.5 text-xs leading-snug font-medium text-muted-foreground">
+        <span className="min-w-0 text-pretty">{title}</span>
         <Tooltip>
           <TooltipTrigger
-            className="inline-flex shrink-0 rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="mt-0.5 inline-flex shrink-0 rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             aria-label={info}
           >
             <Info className="size-3.5" />

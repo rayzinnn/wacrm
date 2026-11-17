@@ -44,7 +44,7 @@ function TileBody({
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
           <span className="text-xl leading-none font-semibold text-foreground tabular-nums">{value}</span>
-          <span className="truncate text-sm text-foreground/90">{label}</span>
+          <span className="min-w-0 text-sm leading-snug text-pretty text-foreground/90">{label}</span>
         </span>
         <span className="mt-1 block truncate text-xs text-muted-foreground">{meta}</span>
       </span>
