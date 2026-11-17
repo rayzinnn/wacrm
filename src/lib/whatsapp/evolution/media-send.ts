@@ -157,6 +157,11 @@ function validateInput(input: ProviderMedia): {
   }
 }
 
+/** Performs the same strict validation as sendMedia without making a request. */
+export function assertValidProviderMedia(input: ProviderMedia): void {
+  validateInput(input)
+}
+
 async function readJsonBounded(response: Response, controller: AbortController): Promise<unknown> {
   const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase()
   if (contentType !== 'application/json' || !response.body) fail('invalid_response', response.status, true)
