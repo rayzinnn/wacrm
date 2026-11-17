@@ -32,7 +32,10 @@ O Chrome em modo headless impõe largura mínima de 500 px ao argumento
 `--window-size`; por isso a primeira captura com esse argumento foi descartada
 como evidência de 320 px. A medição acima usou
 `Emulation.setDeviceMetricsOverride` e verificou `innerWidth` antes de aceitar
-a captura. Também observei o layout em 1440 px no mesmo Chrome, sem inserir
-dados. Este complemento comprova o reflow em 320 px e a ordem de Tab no login
-escuro; **zoom real de 200%, anel de foco observado, Shift+Tab e tema claro em
-320 px permanecem pendentes**. Não alterei o código do login.
+a captura. Repeti a viewport de 320 px com a preferência local SIS claro:
+`innerWidth=scrollWidth=320`, link de recuperação visível e
+[captura clara de 320 px](sis/F7-login/after-light-320-cdp.png). Também observei
+o layout em 1440 px no mesmo Chrome, sem inserir dados. Este complemento
+comprova o reflow em 320 px nos dois modos e a ordem de Tab no login escuro;
+**zoom real de 200%, anel de foco observado e Shift+Tab permanecem pendentes**.
+Não alterei o código do login.
