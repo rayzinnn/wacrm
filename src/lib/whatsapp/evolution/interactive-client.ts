@@ -35,7 +35,7 @@ function validId(value: unknown, max: number): value is string {
   return validString(value, max) && !value.includes('\n');
 }
 
-function validate(input: ProviderInteractive): void {
+export function validateProviderInteractive(input: ProviderInteractive): void {
   if (!input || !/^\d{8,15}@s\.whatsapp\.net$/.test(input.recipient) ||
       !validId(input.requestId, 200) || !validString(input.title, 1024)) {
     throw new EvolutionError('invalid_credentials', 'Evolution interactive send input is invalid.');
@@ -71,7 +71,7 @@ export async function sendInteractive(
   credentials: EvolutionCredentials,
   input: ProviderInteractive,
 ): Promise<ProviderAcceptance> {
-  validate(input);
+  validateProviderInteractive(input);
   if (!credentials || !validId(credentials.token, 4096) ||
       !validId(credentials.instanceId, 200))
     throw new EvolutionError('invalid_credentials', 'Evolution credentials are invalid.');
