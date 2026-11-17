@@ -14,17 +14,21 @@ DECLARE
   v_automation_inactive uuid;
   v_automation_foreign uuid;
   v_flow_active uuid;
+  v_flow_foreign uuid;
   v_ai_config uuid;
   v_event_id uuid;
+  v_event_flow_existing uuid;
   v_dispatch_automation uuid;
   v_dispatch_inactive uuid;
   v_dispatch_foreign uuid;
   v_dispatch_flow uuid;
+  v_dispatch_flow_existing uuid;
   v_dispatch_ai uuid;
   v_token_automation uuid := pg_catalog.gen_random_uuid();
   v_token_inactive uuid := pg_catalog.gen_random_uuid();
   v_token_foreign uuid := pg_catalog.gen_random_uuid();
   v_token_flow uuid := pg_catalog.gen_random_uuid();
+  v_token_flow_existing uuid := pg_catalog.gen_random_uuid();
   v_token_ai uuid := pg_catalog.gen_random_uuid();
 BEGIN
   INSERT INTO auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -61,6 +65,9 @@ BEGIN
   INSERT INTO public.flows (user_id, account_id, name, status, trigger_type, entry_node_id)
   VALUES (v_user_a, v_account_a, 'T12 start active flow', 'active', 'keyword', 'entry')
   RETURNING id INTO v_flow_active;
+  INSERT INTO public.flows (user_id, account_id, name, status, trigger_type, entry_node_id)
+  VALUES (v_user_b, v_account_b, 'T12 start foreign flow', 'active', 'keyword', 'entry')
+  RETURNING id INTO v_flow_foreign;
   INSERT INTO public.ai_configs (account_id, created_by, provider, model, api_key,
                                  is_active, auto_reply_enabled)
   VALUES (v_account_a, v_user_a, 'openai', 'fixture-model', 'fixture-placeholder-not-a-secret', true, true)
@@ -109,6 +116,26 @@ BEGIN
           v_contact_a, v_conversation_a, 'processing', 1,
           pg_catalog.clock_timestamp() + interval '5 minutes', v_token_flow)
   RETURNING id INTO v_dispatch_flow;
+  INSERT INTO public.evolution_events (connection_id, event_key, normalized_event, state, processed_at)
+  VALUES (v_connection_a, 't12:start:flow-existing:' || v_user_a::text,
+          pg_catalog.jsonb_build_object(
+            'kind', 'message', 'eventKey', 't12:start:flow-existing:' || v_user_a::text,
+            'externalMessageId', 'fixture-flow-existing-' || v_user_a::text,
+            'peer', '15550000011@s.whatsapp.net', 'occurredAt', pg_catalog.now()::text,
+            'fromMe', false, 'sentByApi', false, 'contentType', 'text',
+            'text', 'synthetic follow-up', 'mediaRef', NULL
+          ), 'done', pg_catalog.now())
+  RETURNING id INTO v_event_flow_existing;
+  INSERT INTO public.messages (conversation_id, sender_type, content_type, content_text,
+                               message_id, provider_connection_id)
+  VALUES (v_conversation_a, 'customer', 'text', 'synthetic follow-up',
+          'fixture-flow-existing-' || v_user_a::text, v_connection_a);
+  INSERT INTO public.evolution_event_dispatches (event_id, account_id, engine, flow_id,
+      user_id, contact_id, conversation_id, state, attempts, lease_until, lease_token)
+  VALUES (v_event_flow_existing, v_account_a, 'flow', v_flow_active, v_user_a,
+          v_contact_a, v_conversation_a, 'processing', 1,
+          pg_catalog.clock_timestamp() + interval '5 minutes', v_token_flow_existing)
+  RETURNING id INTO v_dispatch_flow_existing;
   INSERT INTO public.evolution_event_dispatches (event_id, account_id, engine, ai_config_id,
       user_id, contact_id, conversation_id, state, attempts, lease_until, lease_token)
   VALUES (v_event_id, v_account_a, 'ai', v_ai_config, v_user_a,
@@ -123,11 +150,14 @@ BEGIN
   PERFORM pg_catalog.set_config('wacrm.t12start.dispatch_inactive', v_dispatch_inactive::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.dispatch_foreign', v_dispatch_foreign::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.dispatch_flow', v_dispatch_flow::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12start.dispatch_flow_existing', v_dispatch_flow_existing::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12start.flow_foreign', v_flow_foreign::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.dispatch_ai', v_dispatch_ai::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.token_automation', v_token_automation::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.token_inactive', v_token_inactive::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.token_foreign', v_token_foreign::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.token_flow', v_token_flow::text, true);
+  PERFORM pg_catalog.set_config('wacrm.t12start.token_flow_existing', v_token_flow_existing::text, true);
   PERFORM pg_catalog.set_config('wacrm.t12start.token_ai', v_token_ai::text, true);
 END;
 $fixture_setup$;
@@ -175,6 +205,7 @@ DECLARE
   v_replay record;
   v_inactive record;
   v_flow record;
+  v_existing_flow record;
   v_ai record;
   v_new_token uuid := pg_catalog.gen_random_uuid();
   v_bad uuid := current_setting('wacrm.t12start.dispatch_foreign')::uuid;
@@ -196,6 +227,12 @@ BEGIN
        WHERE l.evolution_dispatch_id = v_dispatch) <> 1 THEN
     RAISE EXCEPTION 'automation dispatch did not create exactly one linked log';
   END IF;
+  IF (SELECT a.execution_count FROM public.automations AS a
+       WHERE a.id = (SELECT d.automation_id FROM public.evolution_event_dispatches AS d WHERE d.id = v_dispatch)) <> 1
+     OR (SELECT a.last_executed_at FROM public.automations AS a
+          WHERE a.id = (SELECT d.automation_id FROM public.evolution_event_dispatches AS d WHERE d.id = v_dispatch)) IS NULL THEN
+    RAISE EXCEPTION 'Evolution automation start did not update its execution counters';
+  END IF;
 
   -- Model a worker crash after the committed start: a reclaimed lease rotates
   -- the token, and replay under that token must return the same log ID.
@@ -209,6 +246,10 @@ BEGIN
      OR (SELECT count(*) FROM public.automation_logs AS l
           WHERE l.evolution_dispatch_id = v_dispatch) <> 1 THEN
     RAISE EXCEPTION 'crash replay duplicated or changed the automation log';
+  END IF;
+  IF (SELECT a.execution_count FROM public.automations AS a
+       WHERE a.id = (SELECT d.automation_id FROM public.evolution_event_dispatches AS d WHERE d.id = v_dispatch)) <> 1 THEN
+    RAISE EXCEPTION 'automation dispatch replay incremented the counter twice';
   END IF;
 
   SELECT * INTO STRICT v_inactive FROM public.start_evolution_event_dispatch(
@@ -232,6 +273,13 @@ BEGIN
             SELECT d.flow_id FROM public.evolution_event_dispatches AS d WHERE d.id = v_flow.dispatch_id
           )) <> 1 THEN
     RAISE EXCEPTION 'flow start did not create/link exactly one run';
+  END IF;
+  SELECT * INTO STRICT v_existing_flow FROM public.start_evolution_event_dispatch(
+    current_setting('wacrm.t12start.dispatch_flow_existing')::uuid,
+    current_setting('wacrm.t12start.token_flow_existing')::uuid
+  );
+  IF v_existing_flow.flow_run_id IS DISTINCT FROM v_flow.flow_run_id THEN
+    RAISE EXCEPTION 'second Evolution event did not reuse the active flow run';
   END IF;
   SELECT * INTO STRICT v_replay FROM public.start_evolution_event_dispatch(
     v_flow.dispatch_id, current_setting('wacrm.t12start.token_flow')::uuid
@@ -259,6 +307,31 @@ BEGIN
   END;
 END;
 $start_assertions$;
+
+-- The Flow counter trigger waits until the transaction has linked the newly
+-- inserted run to its Evolution dispatch. Flush it before checking totals.
+SET CONSTRAINTS count_evolution_flow_run_execution IMMEDIATE;
+
+DO $counter_assertions$
+DECLARE
+  v_flow_id uuid := (SELECT d.flow_id FROM public.evolution_event_dispatches AS d
+                      WHERE d.id = current_setting('wacrm.t12start.dispatch_flow')::uuid);
+  v_flow_foreign uuid := current_setting('wacrm.t12start.flow_foreign')::uuid;
+  v_automation_foreign uuid := (SELECT d.automation_id FROM public.evolution_event_dispatches AS d
+                                 WHERE d.id = current_setting('wacrm.t12start.dispatch_foreign')::uuid);
+BEGIN
+  IF (SELECT f.execution_count FROM public.flows AS f WHERE f.id = v_flow_id) <> 1
+     OR (SELECT f.last_executed_at FROM public.flows AS f WHERE f.id = v_flow_id) IS NULL THEN
+    RAISE EXCEPTION 'Evolution Flow start did not update its counters exactly once';
+  END IF;
+  IF (SELECT f.execution_count FROM public.flows AS f WHERE f.id = v_flow_foreign) <> 0
+     OR (SELECT f.last_executed_at FROM public.flows AS f WHERE f.id = v_flow_foreign) IS NOT NULL
+     OR (SELECT a.execution_count FROM public.automations AS a WHERE a.id = v_automation_foreign) <> 0
+     OR (SELECT a.last_executed_at FROM public.automations AS a WHERE a.id = v_automation_foreign) IS NOT NULL THEN
+    RAISE EXCEPTION 'Evolution execution counter crossed account boundaries';
+  END IF;
+END;
+$counter_assertions$;
 RESET ROLE;
 
 ROLLBACK;
