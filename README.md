@@ -78,6 +78,8 @@ in an afternoon and make yours.
 
 ## Quick start
 
+> **Local Evolution setup:** this working branch is adapted to run with a local Evolution API, not Meta Cloud API. For the tested local environment, start with [README.local.md](./README.local.md). The generic template instructions below describe the upstream Meta-based setup.
+
 ```bash
 # Fork on GitHub first: https://github.com/ArnasDon/wacrm → Fork
 git clone https://github.com/<your-username>/wacrm.git
